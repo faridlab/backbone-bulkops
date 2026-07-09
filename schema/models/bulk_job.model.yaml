@@ -1,0 +1,131 @@
+# =============================================================================
+# Domain: Bulk Operations
+# Entity: BulkJob (+ BulkJobItem)
+# Description: A cross-cutting utility for mass back-office operations (bulk import, bulk status change,
+# bulk price update) as AUDITED, IDEMPOTENT batch jobs that drive each module's WRITE PATH — never raw SQL,
+# never bypassing invariants. A job holds N items; each item is applied through a BulkTargetPort exactly
+# once (idempotent per (job, item_key)), and its outcome (applied/failed + error) is recorded. Posts NO GL.
+# =============================================================================
+
+models:
+  - name: BulkJob
+    collection: bulk_jobs
+    description: "An audited batch of operations driven through a module's write path"
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique job id"
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Org owner # logical FK to organization.Company.id"
+      operation_type:
+        type: string
+        attributes: ["@required", "@length(max=80)"]
+        description: "What the batch does (lead_import | status_change | price_update | …)"
+      target_module:
+        type: string
+        attributes: ["@required", "@length(max=60)"]
+        description: "The module whose write path each item drives (crm | selling | …)"
+      status:
+        type: BulkJobStatus
+        attributes: ["@required", "@default(pending)"]
+        description: "pending → running → completed | failed"
+      total_items:
+        type: integer
+        attributes: ["@default(0)"]
+        description: "Number of items in the batch"
+      succeeded_count:
+        type: integer
+        attributes: ["@default(0)"]
+        description: "Items applied successfully"
+      failed_count:
+        type: integer
+        attributes: ["@default(0)"]
+        description: "Items that failed to apply"
+      submitted_by:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "The operator # logical FK to sapiens.User.id"
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+    indexes:
+      - type: index
+        fields: [company_id, status]
+
+  - name: BulkJobItem
+    collection: bulk_job_items
+    description: "One operation in a batch — applied through the target module's write path exactly once"
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique item id"
+      job_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(BulkJob.id)"]
+        description: "Parent job"
+      item_key:
+        type: string
+        attributes: ["@required", "@length(max=200)"]
+        description: "The idempotency key for this item within the job (the target record ref / natural key)"
+      status:
+        type: BulkItemStatus
+        attributes: ["@required", "@default(pending)"]
+        description: "pending → applied | failed"
+      payload:
+        type: string
+        attributes: ["@required", "@length(max=8000)"]
+        description: "The operation payload (JSON) the target write path consumes"
+      applied_ref_type:
+        type: string?
+        attributes: ["@length(max=60)"]
+        description: "The record type the apply created/changed"
+      applied_ref_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "The record the apply created/changed # logical FK keyed by applied_ref_type"
+      error_detail:
+        type: string?
+        attributes: ["@length(max=1000)"]
+        description: "Why the item failed"
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+    indexes:
+      # One item per (job, item_key) — the dedup guard so a re-submitted batch never doubles an item.
+      - type: unique
+        fields: [job_id, item_key]
+      - type: index
+        fields: [status]
+
+enums:
+  - name: BulkJobStatus
+    description: "Batch lifecycle"
+    variants:
+      - name: pending
+        description: "Created, not yet run"
+        default: true
+      - name: running
+        description: "Being applied"
+      - name: completed
+        description: "All items terminal"
+      - name: failed
+        description: "Completed with at least one failed item"
+
+  - name: BulkItemStatus
+    description: "Item lifecycle"
+    variants:
+      - name: pending
+        description: "Not yet applied"
+        default: true
+      - name: applying
+        description: "Reserved by a runner (claimed before the external apply) — prevents a concurrent double-apply"
+      - name: applied
+        description: "Applied through the target write path"
+      - name: failed
+        description: "The target write path rejected it"
