@@ -12,7 +12,9 @@ use std::sync::Arc;
 // Import handlers
 use crate::presentation::http::{
     create_bulk_job_routes,
-    create_bulk_job_item_routes
+    create_bulk_job_read_routes,
+    create_bulk_job_item_routes,
+    create_bulk_job_item_read_routes
 };
 
 // Import AppState for stateful routes
@@ -38,6 +40,17 @@ pub fn create_stateless_routes(module: &crate::BulkopsModule) -> Router<()> {
     Router::new()
         .merge(create_bulk_job_routes(module.bulk_job_service.clone()))
         .merge(create_bulk_job_item_routes(module.bulk_job_item_service.clone()))
+}
+
+/// Read-only routes for the Bulkops module — every entity mounted READ-ONLY (the guarded base).
+///
+/// The generic `create_stateless_routes` exposes full mutable CRUD with no domain
+/// validation; this exposes only reads, so generic mutation can't bypass a write
+/// service's invariants. Extend it: `create_readonly_bulkops_routes(m).merge(my_validated_writes)`.
+pub fn create_readonly_bulkops_routes(module: &crate::BulkopsModule) -> Router<()> {
+    Router::new()
+        .merge(create_bulk_job_read_routes(module.bulk_job_service.clone()))
+        .merge(create_bulk_job_item_read_routes(module.bulk_job_item_service.clone()))
 }
 
 /// Get all routes (stateless) for the Bulkops module.
