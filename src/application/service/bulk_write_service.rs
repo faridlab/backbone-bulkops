@@ -5,6 +5,7 @@
 //! `BulkTargetPort` — idempotent per (job, item_key) so a re-run never doubles an item — and records each
 //! outcome. A failed item is isolated (recorded, the batch continues). Posts NO GL.
 
+use backbone_orm::company_scope;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -70,6 +71,9 @@ impl BulkWriteService {
         }
         let job_id = Uuid::new_v4();
         let mut tx = self.pool.begin().await?;
+        // RLS scope (ADR-0008): the job carries its company on the DTO, so bind it explicitly onto this
+        // transaction's connection — every INSERT below is then fenced by `app.company_id`.
+        company_scope::bind_company_on(&mut tx, j.company_id).await?;
         sqlx::query(
             r#"INSERT INTO bulkops.bulk_jobs
                  (id, company_id, operation_type, target_module, status, total_items, succeeded_count,
@@ -108,21 +112,35 @@ impl BulkWriteService {
         port: &dyn BulkTargetPort,
         events: &dyn BulkEventSink,
     ) -> Result<RunSummary, BulkError> {
-        let job = sqlx::query(
-            "SELECT company_id, operation_type FROM bulkops.bulk_jobs WHERE id=$1 AND (metadata->>'deleted_at') IS NULL")
-            .bind(job_id).fetch_optional(&self.pool).await?
+        // RLS scope (ADR-0008), ID-only pattern: a run is identified by the job id alone — there is no
+        // company argument to scope from up front. This read therefore rides the REQUEST-dedicated
+        // connection (which carries the caller's `app.company_id`), so another company's job is simply
+        // not found. When driven by a JOB/EVENT rather than HTTP, the CALLER must wrap this call in
+        // `with_company_scope(Some(company_id))` or the reads fail closed.
+        let job = company_scope::fetch_optional_row_scoped(
+            &self.pool,
+            sqlx::query(
+                "SELECT company_id, operation_type FROM bulkops.bulk_jobs WHERE id=$1 AND (metadata->>'deleted_at') IS NULL")
+                .bind(job_id),
+        ).await?
             .ok_or(BulkError::NotFound("job"))?;
         let company_id: Uuid = job.get("company_id");
         let operation_type: String = job.get("operation_type");
 
-        sqlx::query("UPDATE bulkops.bulk_jobs SET status='running'::bulk_job_status WHERE id=$1")
-            .bind(job_id).execute(&self.pool).await?;
+        company_scope::execute_scoped(
+            &self.pool,
+            sqlx::query("UPDATE bulkops.bulk_jobs SET status='running'::bulk_job_status WHERE id=$1")
+                .bind(job_id),
+        ).await?;
 
-        let items = sqlx::query(
-            r#"SELECT id, item_key, payload FROM bulkops.bulk_job_items
-               WHERE job_id=$1 AND status='pending'::bulk_item_status"#,
-        )
-        .bind(job_id).fetch_all(&self.pool).await?;
+        let items = company_scope::fetch_all_rows_scoped(
+            &self.pool,
+            sqlx::query(
+                r#"SELECT id, item_key, payload FROM bulkops.bulk_job_items
+                   WHERE job_id=$1 AND status='pending'::bulk_item_status"#,
+            )
+            .bind(job_id),
+        ).await?;
 
         let (mut succeeded, mut failed) = (0i32, 0i32);
         for it in &items {
@@ -135,11 +153,14 @@ impl BulkWriteService {
             // CAS (0 rows) and skips it, so the target is applied at most once even under two concurrent
             // runs. (The CAS was previously AFTER apply, which protected the COUNT but not the APPLY —
             // maturity council 2026-07-10.)
-            let reserved = sqlx::query(
-                r#"UPDATE bulkops.bulk_job_items SET status='applying'::bulk_item_status
-                   WHERE id=$1 AND status='pending'::bulk_item_status"#,
-            )
-            .bind(item_id).execute(&self.pool).await?;
+            let reserved = company_scope::execute_scoped(
+                &self.pool,
+                sqlx::query(
+                    r#"UPDATE bulkops.bulk_job_items SET status='applying'::bulk_item_status
+                       WHERE id=$1 AND status='pending'::bulk_item_status"#,
+                )
+                .bind(item_id),
+            ).await?;
             if reserved.rows_affected() != 1 {
                 continue; // another runner owns this item
             }
@@ -147,47 +168,60 @@ impl BulkWriteService {
             let op = BulkOp { company_id, operation_type: operation_type.clone(), item_key, payload };
             match port.apply(&op).await {
                 Ok(ack) => {
-                    sqlx::query(
-                        r#"UPDATE bulkops.bulk_job_items
-                           SET status='applied'::bulk_item_status, applied_ref_type=$2, applied_ref_id=$3
-                           WHERE id=$1 AND status='applying'::bulk_item_status"#,
-                    )
-                    .bind(item_id).bind(&ack.applied_ref_type).bind(ack.applied_ref_id)
-                    .execute(&self.pool).await?;
+                    company_scope::execute_scoped(
+                        &self.pool,
+                        sqlx::query(
+                            r#"UPDATE bulkops.bulk_job_items
+                               SET status='applied'::bulk_item_status, applied_ref_type=$2, applied_ref_id=$3
+                               WHERE id=$1 AND status='applying'::bulk_item_status"#,
+                        )
+                        .bind(item_id).bind(&ack.applied_ref_type).bind(ack.applied_ref_id),
+                    ).await?;
                     succeeded += 1;
                 }
                 Err(rej) => {
-                    sqlx::query(
-                        r#"UPDATE bulkops.bulk_job_items
-                           SET status='failed'::bulk_item_status, error_detail=$2
-                           WHERE id=$1 AND status='applying'::bulk_item_status"#,
-                    )
-                    .bind(item_id).bind(&rej.message).execute(&self.pool).await?;
+                    company_scope::execute_scoped(
+                        &self.pool,
+                        sqlx::query(
+                            r#"UPDATE bulkops.bulk_job_items
+                               SET status='failed'::bulk_item_status, error_detail=$2
+                               WHERE id=$1 AND status='applying'::bulk_item_status"#,
+                        )
+                        .bind(item_id).bind(&rej.message),
+                    ).await?;
                     failed += 1;
                 }
             }
         }
 
         // Roll the job counts up from the item ledger (authoritative — covers prior runs too).
-        let counts = sqlx::query(
-            r#"SELECT
-                 count(*) FILTER (WHERE status='applied'::bulk_item_status) AS applied,
-                 count(*) FILTER (WHERE status='failed'::bulk_item_status)  AS failed
-               FROM bulkops.bulk_job_items WHERE job_id=$1"#,
-        )
-        .bind(job_id).fetch_one(&self.pool).await?;
+        let counts = company_scope::fetch_one_row_scoped(
+            &self.pool,
+            sqlx::query(
+                r#"SELECT
+                     count(*) FILTER (WHERE status='applied'::bulk_item_status) AS applied,
+                     count(*) FILTER (WHERE status='failed'::bulk_item_status)  AS failed
+                   FROM bulkops.bulk_job_items WHERE job_id=$1"#,
+            )
+            .bind(job_id),
+        ).await?;
         let applied_total: i64 = counts.get("applied");
         let failed_total: i64 = counts.get("failed");
         let job_status = if failed_total > 0 { "failed" } else { "completed" };
-        sqlx::query(
-            r#"UPDATE bulkops.bulk_jobs
-               SET status=$2::bulk_job_status, succeeded_count=$3, failed_count=$4 WHERE id=$1"#,
-        )
-        .bind(job_id).bind(job_status).bind(applied_total as i32).bind(failed_total as i32)
-        .execute(&self.pool).await?;
+        company_scope::execute_scoped(
+            &self.pool,
+            sqlx::query(
+                r#"UPDATE bulkops.bulk_jobs
+                   SET status=$2::bulk_job_status, succeeded_count=$3, failed_count=$4 WHERE id=$1"#,
+            )
+            .bind(job_id).bind(job_status).bind(applied_total as i32).bind(failed_total as i32),
+        ).await?;
 
-        let total_items: i32 = sqlx::query_scalar("SELECT total_items FROM bulkops.bulk_jobs WHERE id=$1")
-            .bind(job_id).fetch_one(&self.pool).await?;
+        let total_items: i32 = company_scope::fetch_one_scalar_scoped(
+            &self.pool,
+            sqlx::query_scalar("SELECT total_items FROM bulkops.bulk_jobs WHERE id=$1")
+                .bind(job_id),
+        ).await?;
         events.publish(&BulkEvent::BulkJobCompleted(BulkJobCompleted {
             job_id, company_id, operation_type,
             total_items, succeeded_count: applied_total as i32, failed_count: failed_total as i32,
@@ -199,12 +233,17 @@ impl BulkWriteService {
     /// The failure report for a job — the failed items with their key, error, and payload — so the operator
     /// can see what/why WITHOUT querying the private item ledger (completeness council 2026-07-10).
     pub async fn failures(&self, job_id: Uuid) -> Result<Vec<FailedItem>, BulkError> {
-        let rows = sqlx::query(
-            r#"SELECT item_key, error_detail, payload FROM bulkops.bulk_job_items
-               WHERE job_id=$1 AND status='failed'::bulk_item_status
-               ORDER BY item_key"#,
-        )
-        .bind(job_id).fetch_all(&self.pool).await?;
+        // RLS scope (ADR-0008), ID-only pattern — see `run_job`: fenced by the request-dedicated
+        // connection, so another company's job reports no failures.
+        let rows = company_scope::fetch_all_rows_scoped(
+            &self.pool,
+            sqlx::query(
+                r#"SELECT item_key, error_detail, payload FROM bulkops.bulk_job_items
+                   WHERE job_id=$1 AND status='failed'::bulk_item_status
+                   ORDER BY item_key"#,
+            )
+            .bind(job_id),
+        ).await?;
         Ok(rows.iter().map(|r| FailedItem {
             item_key: r.get("item_key"),
             error_detail: r.get("error_detail"),
@@ -216,12 +255,16 @@ impl BulkWriteService {
     /// the cause). Without this a batch with failures is a dead end — a re-run skips `failed` items
     /// (completeness council 2026-07-10). Returns the number requeued.
     pub async fn retry_failed(&self, job_id: Uuid) -> Result<u64, BulkError> {
-        let moved = sqlx::query(
-            r#"UPDATE bulkops.bulk_job_items
-               SET status='pending'::bulk_item_status, error_detail=NULL
-               WHERE job_id=$1 AND status='failed'::bulk_item_status"#,
-        )
-        .bind(job_id).execute(&self.pool).await?;
+        // RLS scope (ADR-0008), ID-only pattern — see `run_job`.
+        let moved = company_scope::execute_scoped(
+            &self.pool,
+            sqlx::query(
+                r#"UPDATE bulkops.bulk_job_items
+                   SET status='pending'::bulk_item_status, error_detail=NULL
+                   WHERE job_id=$1 AND status='failed'::bulk_item_status"#,
+            )
+            .bind(job_id),
+        ).await?;
         Ok(moved.rows_affected())
     }
 }
