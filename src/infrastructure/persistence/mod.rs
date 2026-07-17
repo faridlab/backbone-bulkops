@@ -24,4 +24,8 @@ pub use backbone_orm::repository::{
 
 // Re-export custom persistence types
 // <<< CUSTOM
+// The hand-written bulkops SQL's parameter/projection types (see `bulk_job_repository` and
+// `bulk_job_item_repository`, both declared `user_owned` in metaphor.codegen.yaml).
+pub use bulk_job_item_repository::{FailedItemRow, ItemCountsRow, NewItemRow, PendingItemRow};
+pub use bulk_job_repository::{JobRunRow, NewJobRow};
 // END CUSTOM

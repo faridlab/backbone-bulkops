@@ -14,6 +14,13 @@ user_owned:
   - "src/application/service/bulk_events.rs"
   - "src/application/service/bulk_ports.rs"
   - "src/application/service/bulk_write_service.rs"
+  # Own the hand-written bulkops SQL (the job header + (job, item_key)-deduped item inserts, the CAS
+  # reserve that makes each apply at-most-once, the applied/failed outcome ledger, the counts roll-up,
+  # the failure report, the requeue) that the write service orchestrates. Declared here — not renamed
+  # with a `_custom` suffix — so the generator skips them wholesale; this declaration is what makes
+  # editing them legitimate.
+  - "src/infrastructure/persistence/bulk_job_repository.rs"
+  - "src/infrastructure/persistence/bulk_job_item_repository.rs"
   - "tests/bulk_crm_seam.rs"
   - "tests/bulk_golden_cases.rs"
   - "tests/integrity_probes.rs"
