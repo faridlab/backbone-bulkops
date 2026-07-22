@@ -68,6 +68,10 @@ models:
         type: uuid
         attributes: ["@required", "@foreign_key(BulkJob.id)"]
         description: "Parent job"
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Org owner # logical FK to organization.Company.id (ADR-0010 fence)"
       item_key:
         type: string
         attributes: ["@required", "@length(max=200)"]

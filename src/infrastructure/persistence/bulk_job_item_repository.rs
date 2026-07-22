@@ -48,6 +48,7 @@ impl BulkJobItemRepository {
 pub struct NewItemRow<'a> {
     pub id: Uuid,
     pub job_id: Uuid,
+    pub company_id: Uuid,
     pub item_key: &'a str,
     pub payload: &'a str,
 }
@@ -88,11 +89,11 @@ impl BulkJobItemRepository {
         it: &NewItemRow<'_>,
     ) -> Result<u64, sqlx::Error> {
         let done = sqlx::query(
-            r#"INSERT INTO bulkops.bulk_job_items (id, job_id, item_key, status, payload)
-               VALUES ($1,$2,$3,'pending'::bulk_item_status,$4)
+            r#"INSERT INTO bulkops.bulk_job_items (id, job_id, company_id, item_key, status, payload)
+               VALUES ($1,$2,$3,$4,'pending'::bulk_item_status,$5)
                ON CONFLICT (job_id, item_key) DO NOTHING"#,
         )
-        .bind(it.id).bind(it.job_id).bind(it.item_key).bind(it.payload)
+        .bind(it.id).bind(it.job_id).bind(it.company_id).bind(it.item_key).bind(it.payload)
         .execute(conn)
         .await?;
         Ok(done.rows_affected())

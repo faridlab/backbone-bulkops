@@ -98,6 +98,7 @@ impl BulkWriteService {
             let n = self.items.insert_item(&mut tx, &NewItemRow {
                 id: Uuid::new_v4(),
                 job_id,
+                company_id: j.company_id,
                 item_key: &it.item_key,
                 payload: &it.payload.to_string(),
             }).await?;
