@@ -112,76 +112,82 @@ impl BulkWriteService {
     /// Run a batch: apply each PENDING item through the target write path, recording each outcome. A failed
     /// item is isolated (recorded `failed`, the batch continues). Idempotent — a re-run processes only
     /// still-`pending` items, so an already-applied item is never re-applied. Emits `BulkJobCompleted`.
+    ///
+    /// `company_id` scopes the run so the CALLER cannot forget to fence it — the fetch, the item
+    /// reservations, the outcome writes, and the event publish all execute with `app.company_id` set.
+    /// A mismatched tenant is indistinguishable from a missing job (`NotFound`), so this does not leak
+    /// whether the id exists.
     pub async fn run_job(
         &self,
         job_id: Uuid,
+        company_id: Uuid,
         port: &dyn BulkTargetPort,
         events: &dyn BulkEventSink,
     ) -> Result<RunSummary, BulkError> {
-        // RLS scope (ADR-0008), ID-only pattern: a run is identified by the job id alone — there is no
-        // company argument to scope from up front. This read therefore rides the REQUEST-dedicated
-        // connection (which carries the caller's `app.company_id`), so another company's job is simply
-        // not found. When driven by a JOB/EVENT rather than HTTP, the CALLER must wrap this call in
-        // `with_company_scope(Some(company_id))` or the reads fail closed.
-        let job = self
-            .jobs
-            .fetch_for_run(&self.pool, job_id)
-            .await?
-            .ok_or(BulkError::NotFound("job"))?;
-        let company_id = job.company_id;
-        let operation_type = job.operation_type;
+        // RLS scope (ADR-0008): company on the parameter — scope the fetch, the item reservations, the
+        // outcome writes, and the event publish so they run with `app.company_id` set. A JOB/EVENT caller
+        // (not just HTTP) can no longer forget to fence the run.
+        company_scope::with_company_scope(Some(company_id), async move {
+            let job = self
+                .jobs
+                .fetch_for_run(&self.pool, job_id)
+                .await?
+                .ok_or(BulkError::NotFound("job"))?;
+            let operation_type = job.operation_type;
 
-        self.jobs.mark_running(&self.pool, job_id).await?;
+            self.jobs.mark_running(&self.pool, job_id).await?;
 
-        let items = self.items.fetch_pending(&self.pool, job_id).await?;
+            let items = self.items.fetch_pending(&self.pool, job_id).await?;
 
-        let (mut succeeded, mut failed) = (0i32, 0i32);
-        for it in &items {
-            let item_id = it.id;
-            let item_key = it.item_key.clone();
-            let payload: serde_json::Value =
-                serde_json::from_str::<serde_json::Value>(&it.payload).unwrap_or(serde_json::Value::Null);
-            // RESERVE the item BEFORE the external apply — a CAS `pending → applying`. Only the reserver
-            // calls `port.apply()`; a concurrent runner that already loaded this item as pending loses the
-            // CAS (0 rows) and skips it, so the target is applied at most once even under two concurrent
-            // runs. (The CAS was previously AFTER apply, which protected the COUNT but not the APPLY —
-            // maturity council 2026-07-10.)
-            let reserved = self.items.reserve(&self.pool, item_id).await?;
-            if reserved != 1 {
-                continue; // another runner owns this item
+            let (mut succeeded, mut failed) = (0i32, 0i32);
+            for it in &items {
+                let item_id = it.id;
+                let item_key = it.item_key.clone();
+                let payload: serde_json::Value =
+                    serde_json::from_str::<serde_json::Value>(&it.payload).unwrap_or(serde_json::Value::Null);
+                // RESERVE the item BEFORE the external apply — a CAS `pending → applying`. Only the reserver
+                // calls `port.apply()`; a concurrent runner that already loaded this item as pending loses the
+                // CAS (0 rows) and skips it, so the target is applied at most once even under two concurrent
+                // runs. (The CAS was previously AFTER apply, which protected the COUNT but not the APPLY —
+                // maturity council 2026-07-10.)
+                let reserved = self.items.reserve(&self.pool, item_id).await?;
+                if reserved != 1 {
+                    continue; // another runner owns this item
+                }
+
+                let op = BulkOp { company_id, operation_type: operation_type.clone(), item_key, payload };
+                match port.apply(&op).await {
+                    Ok(ack) => {
+                        self.items
+                            .mark_applied(&self.pool, item_id, &ack.applied_ref_type, ack.applied_ref_id)
+                            .await?;
+                        succeeded += 1;
+                    }
+                    Err(rej) => {
+                        self.items.mark_failed(&self.pool, item_id, &rej.message).await?;
+                        failed += 1;
+                    }
+                }
             }
 
-            let op = BulkOp { company_id, operation_type: operation_type.clone(), item_key, payload };
-            match port.apply(&op).await {
-                Ok(ack) => {
-                    self.items
-                        .mark_applied(&self.pool, item_id, &ack.applied_ref_type, ack.applied_ref_id)
-                        .await?;
-                    succeeded += 1;
-                }
-                Err(rej) => {
-                    self.items.mark_failed(&self.pool, item_id, &rej.message).await?;
-                    failed += 1;
-                }
-            }
-        }
+            // Roll the job counts up from the item ledger (authoritative — covers prior runs too).
+            let counts = self.items.count_outcomes(&self.pool, job_id).await?;
+            let applied_total = counts.applied;
+            let failed_total = counts.failed;
+            let job_status = if failed_total > 0 { "failed" } else { "completed" };
+            self.jobs
+                .set_outcome(&self.pool, job_id, job_status, applied_total as i32, failed_total as i32)
+                .await?;
 
-        // Roll the job counts up from the item ledger (authoritative — covers prior runs too).
-        let counts = self.items.count_outcomes(&self.pool, job_id).await?;
-        let applied_total = counts.applied;
-        let failed_total = counts.failed;
-        let job_status = if failed_total > 0 { "failed" } else { "completed" };
-        self.jobs
-            .set_outcome(&self.pool, job_id, job_status, applied_total as i32, failed_total as i32)
-            .await?;
+            let total_items = self.jobs.fetch_total_items(&self.pool, job_id).await?;
+            events.publish(&BulkEvent::BulkJobCompleted(BulkJobCompleted {
+                job_id, company_id, operation_type,
+                total_items, succeeded_count: applied_total as i32, failed_count: failed_total as i32,
+            }));
 
-        let total_items = self.jobs.fetch_total_items(&self.pool, job_id).await?;
-        events.publish(&BulkEvent::BulkJobCompleted(BulkJobCompleted {
-            job_id, company_id, operation_type,
-            total_items, succeeded_count: applied_total as i32, failed_count: failed_total as i32,
-        }));
-
-        Ok(RunSummary { job_id, succeeded, failed, skipped: items.len() as i32 - succeeded - failed })
+            Ok(RunSummary { job_id, succeeded, failed, skipped: items.len() as i32 - succeeded - failed })
+        })
+        .await
     }
 
     /// The failure report for a job — the failed items with their key, error, and payload — so the operator

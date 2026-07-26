@@ -48,9 +48,9 @@ async fn bip3_counts_rollup_from_ledger() {
     }).await.unwrap();
 
     // First run fails b; second run (b still fails) — counts reflect the full ledger, not just this run.
-    svc.run_job(j, &FakeTarget::failing(&["b"]), &CapturingSink::new()).await.unwrap();
+    svc.run_job(j, company, &FakeTarget::failing(&["b"]), &CapturingSink::new()).await.unwrap();
     let sink = CapturingSink::new();
-    svc.run_job(j, &FakeTarget::failing(&["b"]), &sink).await.unwrap();
+    svc.run_job(j, company, &FakeTarget::failing(&["b"]), &sink).await.unwrap();
 
     let (succ, fail): (i32, i32) = sqlx::query_as(
         "SELECT succeeded_count, failed_count FROM bulkops.bulk_jobs WHERE id=$1")
@@ -78,8 +78,8 @@ async fn bip4_concurrent_runs_apply_once() {
     let (svc1, svc2) = (BulkWriteService::new(pool.clone()), BulkWriteService::new(pool.clone()));
     let (t1, t2) = (target.clone(), target.clone());
     let (r1, r2) = tokio::join!(
-        async move { svc1.run_job(j, &t1, &CapturingSink::new()).await },
-        async move { svc2.run_job(j, &t2, &CapturingSink::new()).await },
+        async move { svc1.run_job(j, company, &t1, &CapturingSink::new()).await },
+        async move { svc2.run_job(j, company, &t2, &CapturingSink::new()).await },
     );
     r1.unwrap();
     r2.unwrap();

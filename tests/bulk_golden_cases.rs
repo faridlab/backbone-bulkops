@@ -26,7 +26,7 @@ async fn bgc1_run_applies_all() {
     let sink = CapturingSink::new();
 
     let j = svc.create_job(job(company, vec![item("a"), item("b"), item("c")])).await.unwrap();
-    let sum = svc.run_job(j, &target, &sink).await.unwrap();
+    let sum = svc.run_job(j, company, &target, &sink).await.unwrap();
     assert_eq!(sum.succeeded, 3);
     assert_eq!(sum.failed, 0);
     assert_eq!(target.apply_count(), 3);
@@ -48,7 +48,7 @@ async fn bgc2_failed_item_isolated() {
     let sink = CapturingSink::new();
 
     let j = svc.create_job(job(company, vec![item("a"), item("b"), item("c")])).await.unwrap();
-    let sum = svc.run_job(j, &target, &sink).await.unwrap();
+    let sum = svc.run_job(j, company, &target, &sink).await.unwrap();
     assert_eq!(sum.succeeded, 2, "a and c applied despite b failing");
     assert_eq!(sum.failed, 1);
     assert_eq!(target.apply_count(), 2);
@@ -73,8 +73,8 @@ async fn bgc3_rerun_idempotent() {
     let sink = CapturingSink::new();
 
     let j = svc.create_job(job(company, vec![item("a"), item("b")])).await.unwrap();
-    svc.run_job(j, &target, &sink).await.unwrap();
-    let second = svc.run_job(j, &target, &sink).await.unwrap();
+    svc.run_job(j, company, &target, &sink).await.unwrap();
+    let second = svc.run_job(j, company, &target, &sink).await.unwrap();
     assert_eq!(second.succeeded, 0, "re-run applies nothing new");
     assert_eq!(target.apply_count(), 2, "each item applied exactly once across two runs");
 }
@@ -103,7 +103,7 @@ async fn bgc5_report_and_retry_failed() {
 
     let j = svc.create_job(job(company, vec![item("a"), item("b"), item("c")])).await.unwrap();
     // First run: b fails.
-    svc.run_job(j, &FakeTarget::failing(&["b"]), &sink).await.unwrap();
+    svc.run_job(j, company, &FakeTarget::failing(&["b"]), &sink).await.unwrap();
 
     // The operator gets the failure report from the API alone — which key, why.
     let fails = svc.failures(j).await.unwrap();
@@ -114,7 +114,7 @@ async fn bgc5_report_and_retry_failed() {
     // Fix the cause, retry just the failed item, re-run → job clears.
     let requeued = svc.retry_failed(j).await.unwrap();
     assert_eq!(requeued, 1, "one failed item requeued");
-    svc.run_job(j, &FakeTarget::new(), &sink).await.unwrap();
+    svc.run_job(j, company, &FakeTarget::new(), &sink).await.unwrap();
 
     let (status, failed): (String, i32) = sqlx::query_as(
         "SELECT status::text, failed_count FROM bulkops.bulk_jobs WHERE id=$1")

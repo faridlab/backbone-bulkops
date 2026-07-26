@@ -27,7 +27,7 @@ async fn bseam1_bulk_import_creates_real_crm_leads() {
         company_id: company, operation_type: "lead_import".into(), target_module: "crm".into(),
         submitted_by: None, items,
     }).await.unwrap();
-    let sum = svc.run_job(j, &target, &sink).await.unwrap();
+    let sum = svc.run_job(j, company, &target, &sink).await.unwrap();
     assert_eq!(sum.succeeded, 2);
 
     // Two REAL crm leads exist for this company, created through create_lead (status 'new', source 'other').
