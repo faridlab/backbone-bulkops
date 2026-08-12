@@ -24,6 +24,9 @@ user_owned:
   - "tests/bulk_crm_seam.rs"
   - "tests/bulk_golden_cases.rs"
   - "tests/integrity_probes.rs"
+  # Cross-tenant RLS probe (council 2026-08-12 Rec #1): connects a NOBYPASSRLS non-superuser role
+  # and asserts run_job is fenced across tenants. Hand-written — not schema-derived.
+  - "tests/tenant_isolation.rs"
   - "scripts/**"
   # Hand-authored behavior (services + their HTTP surface). Examples:
   # - "src/application/service/onboarding_service.rs"
