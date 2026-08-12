@@ -8,7 +8,7 @@
 //! ## Usage from other modules
 //!
 //! ```text
-//! use bulkops::exports::{BulkJobDto, BulkopsQueryService};
+//! use bulkops::exports::{BulkJobDto};
 //! ```
 
 mod types;
@@ -33,9 +33,6 @@ pub use events::*;
 /// - `BulkJobItemDto` - Data transfer object for BulkJobItem
 /// - `BulkJobItemSummary` - Summary view of BulkJobItem
 /// - `BulkJobItemId` - Type-safe ID wrapper
-///
-/// ## Public Services
-/// - `BulkopsQueryService` - Read-only queries
 ///
 /// ## Public Events
 /// - `BulkJobCreatedEvent` - Published when BulkJob is created

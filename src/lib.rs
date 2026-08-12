@@ -23,6 +23,7 @@ pub mod infrastructure;
 pub mod application;
 pub mod presentation;
 pub mod seeders;
+pub mod exports;
 
 // Re-exports for convenience - Domain entities
 pub use domain::entity::*;
@@ -54,8 +55,10 @@ use sqlx::PgPool;
 /// let router = bulkops.all_crud_routes();
 /// ```
 pub struct BulkopsModule {
-    pub bulk_job_service: Arc<BulkJobService>,
-    pub bulk_job_item_service: Arc<BulkJobItemService>,
+    pub(crate) bulk_job_service: Arc<BulkJobService>,
+    pub(crate) bulk_job_item_service: Arc<BulkJobItemService>,
+    // <<< CUSTOM FIELDS
+    // END CUSTOM
 }
 
 impl BulkopsModule {
@@ -85,10 +88,29 @@ impl BulkopsModule {
     /// mount exposes unguarded writes. Compose a guarded router (read + validated
     /// writes) for production, or call `all_crud_routes()` to opt into the full
     /// unguarded surface explicitly.
-    #[deprecated(note = "mounts unvalidated generic CRUD on every entity; compose a guarded router for production, or call all_crud_routes() for the intentional full/unguarded surface")]
+    #[deprecated(note = "mounts unvalidated generic CRUD; prefer readonly_routes() + validated writes, or all_crud_routes() for the full/unguarded surface")]
     pub fn routes(&self) -> Router {
         self.all_crud_routes()
     }
+
+    /// Read-only routes for every entity (GET endpoints only) — the safe base.
+    ///
+    /// Generic mutation can't reach here, so this surface cannot bypass a
+    /// validated write service's invariants. Use this as the production base and
+    /// merge validated write routes (or a write service's HTTP layer) onto it.
+    pub fn readonly_routes(&self) -> Router {
+        use presentation::http::{
+            create_bulk_job_read_routes,
+            create_bulk_job_item_read_routes,
+        };
+
+        Router::new()
+            .merge(create_bulk_job_read_routes(self.bulk_job_service.clone()))
+            .merge(create_bulk_job_item_read_routes(self.bulk_job_item_service.clone()))
+    }
+
+    // <<< CUSTOM METHODS
+    // END CUSTOM
 }
 
 /// Builder for BulkopsModule
