@@ -25,6 +25,7 @@ impl TestDataGenerator for BulkJobItemTestData {
         json!({
             "id": Uuid::new_v4().to_string(),
             "job_id": Uuid::new_v4().to_string(),
+            "company_id": Uuid::new_v4().to_string(),
             "item_key": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
             "status": "pending",
             "payload": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
@@ -40,6 +41,7 @@ impl TestDataGenerator for BulkJobItemTestData {
         json!({
             "id": id,
             "job_id": Uuid::new_v4().to_string(),
+            "company_id": Uuid::new_v4().to_string(),
             "item_key": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),
             "status": "pending",
             "payload": format!("Test {}", Uuid::new_v4().to_string().split('-').next().unwrap()),

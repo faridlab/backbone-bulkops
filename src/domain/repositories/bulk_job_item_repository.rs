@@ -45,6 +45,7 @@ pub struct BulkJobItemPaginatedResult {
 #[derive(Debug, Clone, Default)]
 pub struct BulkJobItemFilter {
     pub job_id: Option<Uuid>,
+    pub company_id: Option<Uuid>,
     pub item_key: Option<String>,
     pub status: Option<BulkItemStatus>,
     pub payload: Option<String>,
@@ -56,7 +57,7 @@ pub struct BulkJobItemFilter {
 impl BulkJobItemFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.job_id.is_some() || self.item_key.is_some() || self.status.is_some() || self.payload.is_some() || self.applied_ref_type.is_some() || self.applied_ref_id.is_some() || self.error_detail.is_some()
+        self.job_id.is_some() || self.company_id.is_some() || self.item_key.is_some() || self.status.is_some() || self.payload.is_some() || self.applied_ref_type.is_some() || self.applied_ref_id.is_some() || self.error_detail.is_some()
     }
 }
 

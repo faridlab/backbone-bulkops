@@ -111,6 +111,7 @@ impl From<BulkJobItemId> for Uuid {
 pub struct BulkJobItemDto {
     pub id: BulkJobItemId,
     pub job_id: Uuid,
+    pub company_id: Uuid,
     pub item_key: String,
     pub status: BulkItemStatus,
     pub payload: String,

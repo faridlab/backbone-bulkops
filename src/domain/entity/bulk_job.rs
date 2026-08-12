@@ -244,6 +244,9 @@ impl backbone_orm::EntityRepoMeta for BulkJob {
     fn search_fields() -> &'static [&'static str] {
         &["operation_type", "target_module"]
     }
+    fn company_field() -> Option<&'static str> {
+        Some("company_id")
+    }
 }
 
 /// Builder for BulkJob entity

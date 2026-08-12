@@ -922,6 +922,7 @@ components:
       required:
         - id
         - job_id
+        - company_id
         - item_key
         - status
         - payload
@@ -931,6 +932,9 @@ components:
           type: string
           format: uuid
         job_id:
+          type: string
+          format: uuid
+        company_id:
           type: string
           format: uuid
         item_key:
@@ -969,12 +973,16 @@ components:
       type: object
       required:
         - job_id
+        - company_id
         - item_key
         - status
         - payload
         - metadata
       properties:
         job_id:
+          type: string
+          format: uuid
+        company_id:
           type: string
           format: uuid
         item_key:
@@ -1000,12 +1008,16 @@ components:
       type: object
       required:
         - job_id
+        - company_id
         - item_key
         - status
         - payload
         - metadata
       properties:
         job_id:
+          type: string
+          format: uuid
+        company_id:
           type: string
           format: uuid
         item_key:
@@ -1031,6 +1043,9 @@ components:
       type: object
       properties:
         job_id:
+          type: string
+          format: uuid
+        company_id:
           type: string
           format: uuid
         item_key:
