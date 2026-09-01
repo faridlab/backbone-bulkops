@@ -13,6 +13,7 @@ pub enum BulkJobStatus {
     Running,
     Completed,
     Failed,
+    Cancelled,
 }
 
 impl std::fmt::Display for BulkJobStatus {
@@ -22,6 +23,7 @@ impl std::fmt::Display for BulkJobStatus {
             Self::Running => write!(f, "running"),
             Self::Completed => write!(f, "completed"),
             Self::Failed => write!(f, "failed"),
+            Self::Cancelled => write!(f, "cancelled"),
         }
     }
 }
@@ -35,6 +37,7 @@ impl FromStr for BulkJobStatus {
             "running" => Ok(Self::Running),
             "completed" => Ok(Self::Completed),
             "failed" => Ok(Self::Failed),
+            "cancelled" => Ok(Self::Cancelled),
             _ => Err(format!("Unknown BulkJobStatus variant: {}", s)),
         }
     }

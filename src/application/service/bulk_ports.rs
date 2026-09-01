@@ -41,7 +41,20 @@ pub struct BulkRejected {
 /// but a crash after the target commits and before the mark leaves the item `applying`, and recovery must
 /// reconcile it against the target by `item_key`, never blind-re-apply. So the target's `item_key` dedup is
 /// the linchpin of exactly-once — the engine guarantees at-least-once + no concurrent duplicate.
+///
+/// **Re-check contract (required for crash recovery):** `check_applied` answers, for the same
+/// `(company_id, item_key)` idempotency key `apply` dedupes on, whether the target already holds the
+/// effect. `Ok(Some(ack))` = already applied (return the original ref); `Ok(None)` = the target holds
+/// nothing for the key, so a re-apply is safe; `Err` = the target CANNOT DETERMINE it — the engine then
+/// cancels the item rather than risk a duplicate effect or a silent drop. A target with no by-key
+/// lookup must return `Err`, never guess.
 #[async_trait::async_trait]
 pub trait BulkTargetPort: Send + Sync {
     async fn apply(&self, op: &BulkOp) -> Result<BulkAck, BulkRejected>;
+
+    async fn check_applied(
+        &self,
+        company_id: Uuid,
+        item_key: &str,
+    ) -> Result<Option<BulkAck>, BulkRejected>;
 }

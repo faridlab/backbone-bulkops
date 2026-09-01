@@ -185,4 +185,3 @@ pub fn create_protected_bulk_job_item_routes<A: AuthMiddleware + Send + Sync + '
             }
         }))
 }
-

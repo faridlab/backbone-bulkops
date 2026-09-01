@@ -47,6 +47,35 @@ pub struct RunSummary {
     pub skipped: i32,
 }
 
+/// What a reconcile pass did with a job's stranded `applying` items.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReconcileSummary {
+    pub job_id: Uuid,
+    /// The re-check confirmed the target already held the effect — marked applied, NOT re-applied.
+    pub confirmed: i32,
+    /// The target held nothing for the key — re-applied through the port (the item's own outcome,
+    /// applied or failed, is recorded on it like any run).
+    pub reapplied: i32,
+    /// The target could not determine the item — cancelled to the terminal state; an operator decides
+    /// whether to resubmit.
+    pub cancelled: i32,
+    /// Items still short of a terminal state after this pass (not stale yet, or awaiting a run).
+    pub unfinished: i32,
+}
+
+/// The job's terminal status from the ledger tally: a failure dominates; otherwise a reconciled
+/// cancellation marks the job `cancelled` (an operator must see the unverifiable item); only a clean
+/// ledger completes.
+fn terminal_status(failed: i64, cancelled: i64) -> &'static str {
+    if failed > 0 {
+        "failed"
+    } else if cancelled > 0 {
+        "cancelled"
+    } else {
+        "completed"
+    }
+}
+
 /// A failed item, surfaced so the operator can act on it without touching the private ledger.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FailedItem {
@@ -174,7 +203,7 @@ impl BulkWriteService {
             let counts = self.items.count_outcomes(&self.pool, job_id).await?;
             let applied_total = counts.applied;
             let failed_total = counts.failed;
-            let job_status = if failed_total > 0 { "failed" } else { "completed" };
+            let job_status = terminal_status(failed_total, counts.cancelled);
             self.jobs
                 .set_outcome(&self.pool, job_id, job_status, applied_total as i32, failed_total as i32)
                 .await?;
@@ -210,5 +239,121 @@ impl BulkWriteService {
         // RLS scope (ADR-0008), ID-only pattern — see `run_job`.
         let moved = self.items.requeue_failed(&self.pool, job_id).await?;
         Ok(moved)
+    }
+
+    /// Recover a crashed run: the job's `applying` items older than `older_than` are stranded — the
+    /// runner died between the target's commit and the engine's outcome mark. Each is re-checked
+    /// against the target by `item_key`, NEVER blind-re-applied:
+    ///
+    /// - target already holds the effect → marked `applied` (with the target's original ref);
+    /// - target holds nothing for the key → re-applied through the port (safe: `apply` is idempotent
+    ///   on `(company_id, item_key)` by the port contract, so even a wrong answer cannot double the
+    ///   effect) and the item records that outcome;
+    /// - target cannot determine it → the item exits to the terminal `cancelled` state — the engine
+    ///   neither duplicates an effect nor silently drops one; an operator decides whether to resubmit.
+    ///
+    /// If the pass empties the job's non-terminal set, the job rolls up from the ledger and publishes
+    /// `BulkJobCompleted` (same contract as `run_job` — downstream mapping persistence gates on it).
+    ///
+    /// `company_id` scopes the pass exactly as it scopes `run_job`: the fetch, the re-checks, the
+    /// outcome writes, and any event publish all run fenced by `app.company_id`, and a mismatched
+    /// tenant is indistinguishable from a missing job (`NotFound`).
+    pub async fn reconcile_applying(
+        &self,
+        job_id: Uuid,
+        company_id: Uuid,
+        port: &dyn BulkTargetPort,
+        events: &dyn BulkEventSink,
+        older_than: chrono::Duration,
+    ) -> Result<ReconcileSummary, BulkError> {
+        if older_than < chrono::Duration::zero() {
+            return Err(BulkError::Invalid("older_than must not be negative".into()));
+        }
+        // RLS scope (ADR-0008) — see `run_job` for the fence's shape and why it is on the parameter.
+        company_scope::with_company_scope(Some(company_id), async move {
+            let job = self
+                .jobs
+                .fetch_for_run(&self.pool, job_id)
+                .await?
+                .ok_or(BulkError::NotFound("job"))?;
+            let operation_type = job.operation_type;
+
+            let stale = self
+                .items
+                .fetch_applying_stale(&self.pool, job_id, older_than.num_seconds())
+                .await?;
+
+            let (mut confirmed, mut reapplied, mut cancelled) = (0i32, 0i32, 0i32);
+            for it in &stale {
+                match port.check_applied(company_id, &it.item_key).await {
+                    // The target already holds the effect — record its ref; never re-apply.
+                    Ok(Some(ack)) => {
+                        self.items
+                            .mark_applied(&self.pool, it.id, &ack.applied_ref_type, ack.applied_ref_id)
+                            .await?;
+                        confirmed += 1;
+                    }
+                    // The target holds nothing for the key — a re-apply cannot double the effect.
+                    Ok(None) => {
+                        let payload: serde_json::Value = serde_json::from_str::<serde_json::Value>(&it.payload)
+                            .unwrap_or(serde_json::Value::Null);
+                        let op = BulkOp {
+                            company_id,
+                            operation_type: operation_type.clone(),
+                            item_key: it.item_key.clone(),
+                            payload,
+                        };
+                        match port.apply(&op).await {
+                            Ok(ack) => {
+                                self.items
+                                    .mark_applied(&self.pool, it.id, &ack.applied_ref_type, ack.applied_ref_id)
+                                    .await?;
+                            }
+                            Err(rej) => {
+                                self.items.mark_failed(&self.pool, it.id, &rej.message).await?;
+                            }
+                        }
+                        reapplied += 1;
+                    }
+                    // The target cannot answer — cancel; never guess an effect into or out of existence.
+                    Err(rej) => {
+                        self.items
+                            .mark_cancelled(&self.pool, it.id, &format!("unverifiable after a crashed run: {}", rej.message))
+                            .await?;
+                        cancelled += 1;
+                    }
+                }
+            }
+
+            // A pass that emptied the non-terminal set finishes the job: roll up from the ledger and
+            // publish completion under the same contract as `run_job`.
+            let unfinished = self.items.count_unfinished(&self.pool, job_id).await?;
+            if unfinished == 0 {
+                let counts = self.items.count_outcomes(&self.pool, job_id).await?;
+                self.jobs
+                    .set_outcome(
+                        &self.pool,
+                        job_id,
+                        terminal_status(counts.failed, counts.cancelled),
+                        counts.applied as i32,
+                        counts.failed as i32,
+                    )
+                    .await?;
+                let total_items = self.jobs.fetch_total_items(&self.pool, job_id).await?;
+                events.publish(&BulkEvent::BulkJobCompleted(BulkJobCompleted {
+                    job_id, company_id, operation_type,
+                    total_items, succeeded_count: counts.applied as i32, failed_count: counts.failed as i32,
+                }));
+            }
+
+            Ok(ReconcileSummary {
+                job_id,
+                confirmed,
+                reapplied,
+                cancelled,
+                unfinished: unfinished as i32,
+            })
+        })
+        .await
     }
 }

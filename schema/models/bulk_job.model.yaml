@@ -31,7 +31,7 @@ models:
       status:
         type: BulkJobStatus
         attributes: ["@required", "@default(pending)"]
-        description: "pending → running → completed | failed"
+        description: "pending → running → completed | failed | cancelled"
       total_items:
         type: integer
         attributes: ["@default(0)"]
@@ -79,7 +79,7 @@ models:
       status:
         type: BulkItemStatus
         attributes: ["@required", "@default(pending)"]
-        description: "pending → applied | failed"
+        description: "pending → applying → applied | failed | cancelled (reconcile exits a stale applying claim)"
       payload:
         type: string
         attributes: ["@required", "@length(max=8000)"]
@@ -120,6 +120,8 @@ enums:
         description: "All items terminal"
       - name: failed
         description: "Completed with at least one failed item"
+      - name: cancelled
+        description: "Terminal with at least one item the target could not confirm after a crashed run (reconcile could neither verify nor safely re-apply it)"
 
   - name: BulkItemStatus
     description: "Item lifecycle"
@@ -133,3 +135,5 @@ enums:
         description: "Applied through the target write path"
       - name: failed
         description: "The target write path rejected it"
+      - name: cancelled
+        description: "Terminal: a stale applying claim the target could neither confirm nor safely re-apply — an operator decides whether to resubmit"

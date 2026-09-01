@@ -24,6 +24,11 @@ user_owned:
   - "tests/bulk_crm_seam.rs"
   - "tests/bulk_golden_cases.rs"
   - "tests/integrity_probes.rs"
+  # Crash-recovery probes for the reconcile pass (confirmed / re-applied / cancelled exits, the age
+  # fence, and the no-masking job roll-up). Hand-written — not schema-derived.
+  - "tests/bulk_reconcile_probes.rs"
+  # Shared hand-written test helpers (fake + real targets, sinks, pool). Not schema-derived.
+  - "tests/common/mod.rs"
   # Cross-tenant RLS probe (council 2026-08-12 Rec #1): connects a NOBYPASSRLS non-superuser role
   # and asserts run_job is fenced across tenants. Hand-written — not schema-derived.
   - "tests/tenant_isolation.rs"

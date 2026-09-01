@@ -66,7 +66,7 @@ pub struct BulkJob {
 impl BulkJob {
     /// Create a builder for BulkJob
     pub fn builder() -> BulkJobBuilder {
-        BulkJobBuilder::default()
+        <BulkJobBuilder as Default>::default()
     }
 
     /// Create a new BulkJob with required fields
@@ -327,7 +327,7 @@ impl BulkJobBuilder {
             company_id,
             operation_type,
             target_module,
-            status: self.status.unwrap_or(BulkJobStatus::default()),
+            status: self.status.unwrap_or_default(),
             total_items: self.total_items.unwrap_or(0),
             succeeded_count: self.succeeded_count.unwrap_or(0),
             failed_count: self.failed_count.unwrap_or(0),

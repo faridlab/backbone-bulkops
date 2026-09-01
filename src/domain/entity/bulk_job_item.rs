@@ -66,7 +66,7 @@ pub struct BulkJobItem {
 impl BulkJobItem {
     /// Create a builder for BulkJobItem
     pub fn builder() -> BulkJobItemBuilder {
-        BulkJobItemBuilder::default()
+        <BulkJobItemBuilder as Default>::default()
     }
 
     /// Create a new BulkJobItem with required fields
@@ -342,7 +342,7 @@ impl BulkJobItemBuilder {
             job_id,
             company_id,
             item_key,
-            status: self.status.unwrap_or(BulkItemStatus::default()),
+            status: self.status.unwrap_or_default(),
             payload,
             applied_ref_type: self.applied_ref_type,
             applied_ref_id: self.applied_ref_id,

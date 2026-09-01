@@ -73,6 +73,7 @@ pub struct FailedItemRow {
 pub struct ItemCountsRow {
     pub applied: i64,
     pub failed: i64,
+    pub cancelled: i64,
 }
 
 /// Hand-written BulkJobItem SQL. Lives here (not in the write service) per the module's 4-layer rule:
@@ -193,8 +194,8 @@ impl BulkJobItemRepository {
         Ok(())
     }
 
-    /// The job's authoritative applied/failed tally, counted DB-side across ALL runs. ID-only, same RLS
-    /// contract as [`Self::reserve`].
+    /// The job's authoritative applied/failed/cancelled tally, counted DB-side across ALL runs. ID-only,
+    /// same RLS contract as [`Self::reserve`].
     pub async fn count_outcomes(
         &self,
         pool: &PgPool,
@@ -204,14 +205,86 @@ impl BulkJobItemRepository {
             pool,
             sqlx::query(
                 r#"SELECT
-                     count(*) FILTER (WHERE status='applied'::bulk_item_status) AS applied,
-                     count(*) FILTER (WHERE status='failed'::bulk_item_status)  AS failed
+                     count(*) FILTER (WHERE status='applied'::bulk_item_status)    AS applied,
+                     count(*) FILTER (WHERE status='failed'::bulk_item_status)     AS failed,
+                     count(*) FILTER (WHERE status='cancelled'::bulk_item_status)  AS cancelled
                    FROM bulkops.bulk_job_items WHERE job_id=$1"#,
             )
             .bind(job_id),
         )
         .await?;
-        Ok(ItemCountsRow { applied: r.get("applied"), failed: r.get("failed") })
+        Ok(ItemCountsRow { applied: r.get("applied"), failed: r.get("failed"), cancelled: r.get("cancelled") })
+    }
+
+    /// The job's items still holding an `applying` claim older than `older_than_secs` — the stranded
+    /// crash residue `reconcile_applying` re-checks against the target. Age comes from the audit
+    /// trigger's `updated_at` (stamped when `reserve` claimed the item); an `applying` row with no
+    /// parseable `updated_at` is NOT matched (it stays `applying` — conservative, never auto-resolved).
+    /// ID-only, same RLS contract as [`Self::reserve`].
+    pub async fn fetch_applying_stale(
+        &self,
+        pool: &PgPool,
+        job_id: Uuid,
+        older_than_secs: i64,
+    ) -> Result<Vec<PendingItemRow>, sqlx::Error> {
+        let rows = company_scope::fetch_all_rows_scoped(
+            pool,
+            sqlx::query(
+                r#"SELECT id, item_key, payload FROM bulkops.bulk_job_items
+                   WHERE job_id=$1 AND status='applying'::bulk_item_status
+                     AND (metadata->>'updated_at')::timestamptz < now() - make_interval(secs => $2)
+                   ORDER BY item_key"#,
+            )
+            .bind(job_id)
+            .bind(older_than_secs),
+        )
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| PendingItemRow {
+                id: r.get("id"), item_key: r.get("item_key"), payload: r.get("payload"),
+            })
+            .collect())
+    }
+
+    /// How many of the job's items are still short of a terminal state (`pending` + `applying`) — the
+    /// reconciler's "is the job done now?" check. ID-only, same RLS contract as [`Self::reserve`].
+    pub async fn count_unfinished(
+        &self,
+        pool: &PgPool,
+        job_id: Uuid,
+    ) -> Result<i64, sqlx::Error> {
+        company_scope::fetch_one_scalar_scoped(
+            pool,
+            sqlx::query_scalar(
+                r#"SELECT count(*) FROM bulkops.bulk_job_items
+                   WHERE job_id=$1 AND status IN ('pending'::bulk_item_status, 'applying'::bulk_item_status)"#,
+            )
+            .bind(job_id),
+        )
+        .await
+    }
+
+    /// Record a CANCELLED item — the terminal exit for a stale `applying` claim the target could neither
+    /// confirm nor safely re-apply. State-guarded on `applying`; ID-only, same RLS contract as
+    /// [`Self::reserve`].
+    pub async fn mark_cancelled(
+        &self,
+        pool: &PgPool,
+        item_id: Uuid,
+        reason: &str,
+    ) -> Result<(), sqlx::Error> {
+        company_scope::execute_scoped(
+            pool,
+            sqlx::query(
+                r#"UPDATE bulkops.bulk_job_items
+                   SET status='cancelled'::bulk_item_status, error_detail=$2
+                   WHERE id=$1 AND status='applying'::bulk_item_status"#,
+            )
+            .bind(item_id).bind(reason),
+        )
+        .await?;
+        Ok(())
     }
 
     /// The job's failed items with key, error, and payload — the operator's failure report. ID-only, same

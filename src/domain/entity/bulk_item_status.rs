@@ -13,6 +13,7 @@ pub enum BulkItemStatus {
     Applying,
     Applied,
     Failed,
+    Cancelled,
 }
 
 impl std::fmt::Display for BulkItemStatus {
@@ -22,6 +23,7 @@ impl std::fmt::Display for BulkItemStatus {
             Self::Applying => write!(f, "applying"),
             Self::Applied => write!(f, "applied"),
             Self::Failed => write!(f, "failed"),
+            Self::Cancelled => write!(f, "cancelled"),
         }
     }
 }
@@ -35,6 +37,7 @@ impl FromStr for BulkItemStatus {
             "applying" => Ok(Self::Applying),
             "applied" => Ok(Self::Applied),
             "failed" => Ok(Self::Failed),
+            "cancelled" => Ok(Self::Cancelled),
             _ => Err(format!("Unknown BulkItemStatus variant: {}", s)),
         }
     }
