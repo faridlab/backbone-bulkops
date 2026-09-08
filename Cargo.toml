@@ -1,6 +1,6 @@
 [package]
 name = "backbone-bulkops"
-version = "0.5.1"
+version = "0.5.3"
 edition = "2021"
 description = "Audited, idempotent batch operations that drive each module's write path through a port seam"
 
@@ -16,10 +16,10 @@ path = "src/lib.rs"
 # cargo dedupes the git fetch — the repo is cloned once. To move the baseline,
 # change every tag together so the resolve stays single-rev.
 # -----------------------------------------------------------------------------
-backbone-core = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.16", features = ["postgres"] }
-backbone-orm = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.16" }
-backbone-auth = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.16" }
-backbone-messaging = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.16" }
+backbone-core = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.17", features = ["postgres"] }
+backbone-orm = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.17" }
+backbone-auth = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.17" }
+backbone-messaging = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.17" }
 
 # Core async runtime and serialization
 tokio = { version = "1.0", features = ["full"] }
