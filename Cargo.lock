@@ -209,7 +209,7 @@ dependencies = [
 [[package]]
 name = "backbone-auth"
 version = "2.0.0"
-source = "git+https://github.com/faridlab/backbone-framework?tag=v2.7.16#101244261cb67dda5155861875cb0046f1bb13d0"
+source = "git+https://github.com/faridlab/backbone-framework?tag=v2.7.17#1aa250dba799be723ddf0d9cfadc044487b1d7fd"
 dependencies = [
  "anyhow",
  "argon2",
@@ -235,7 +235,7 @@ dependencies = [
 
 [[package]]
 name = "backbone-bulkops"
-version = "0.5.1"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -276,7 +276,7 @@ dependencies = [
 [[package]]
 name = "backbone-core"
 version = "2.0.0"
-source = "git+https://github.com/faridlab/backbone-framework?tag=v2.7.16#101244261cb67dda5155861875cb0046f1bb13d0"
+source = "git+https://github.com/faridlab/backbone-framework?tag=v2.7.17#1aa250dba799be723ddf0d9cfadc044487b1d7fd"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -302,7 +302,7 @@ dependencies = [
 
 [[package]]
 name = "backbone-lead"
-version = "0.2.4"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -335,7 +335,7 @@ dependencies = [
 [[package]]
 name = "backbone-messaging"
 version = "2.0.0"
-source = "git+https://github.com/faridlab/backbone-framework?tag=v2.7.16#101244261cb67dda5155861875cb0046f1bb13d0"
+source = "git+https://github.com/faridlab/backbone-framework?tag=v2.7.17#1aa250dba799be723ddf0d9cfadc044487b1d7fd"
 dependencies = [
  "async-trait",
  "chrono",
@@ -350,7 +350,7 @@ dependencies = [
 [[package]]
 name = "backbone-orm"
 version = "2.0.0"
-source = "git+https://github.com/faridlab/backbone-framework?tag=v2.7.16#101244261cb67dda5155861875cb0046f1bb13d0"
+source = "git+https://github.com/faridlab/backbone-framework?tag=v2.7.17#1aa250dba799be723ddf0d9cfadc044487b1d7fd"
 dependencies = [
  "anyhow",
  "async-trait",
