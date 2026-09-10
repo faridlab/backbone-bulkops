@@ -235,7 +235,7 @@ dependencies = [
 
 [[package]]
 name = "backbone-bulkops"
-version = "0.5.3"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -302,7 +302,7 @@ dependencies = [
 
 [[package]]
 name = "backbone-lead"
-version = "0.2.6"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
