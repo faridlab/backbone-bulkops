@@ -24,10 +24,13 @@ async fn bseam1_bulk_import_creates_real_leads() {
         NewItem { item_key: format!("k-{}", Uuid::new_v4()), payload: json!({"lead_name": "Sari", "phone": "+628222"}) },
     ];
     let j = svc.create_job(NewJob {
-        company_id: company, operation_type: "lead_import".into(), target_module: "lead".into(),
+        operation_type: "lead_import".into(), target_module: "lead".into(),
         submitted_by: None, items,
     }).await.unwrap();
-    let sum = svc.run_job(j, company, &target, &sink).await.unwrap();
+    // The run rides a company-anchored ambient org scope (ADR-0029): lead — the sibling on the
+    // far side of the port — still keys its rows on the legacy company id, and the engine hands
+    // the scope's company twin to the port.
+    let sum = scoped(&pool, company, svc.run_job(j, &target, &sink)).await.unwrap();
     assert_eq!(sum.succeeded, 2);
 
     // Two REAL leads exist for this company, created through create_lead (status 'new', source 'other').

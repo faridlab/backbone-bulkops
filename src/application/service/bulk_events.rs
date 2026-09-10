@@ -7,6 +7,9 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BulkJobCompleted {
     pub job_id: Uuid,
+    /// The legacy company twin of the org scope the run rode (ADR-0029) — routing/observability
+    /// data for subscribers whose own rows still key on the legacy company, not a fence of this
+    /// module's tables.
     pub company_id: Uuid,
     pub operation_type: String,
     pub total_items: i32,

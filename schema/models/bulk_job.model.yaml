@@ -5,6 +5,12 @@
 # bulk price update) as AUDITED, IDEMPOTENT batch jobs that drive each module's WRITE PATH — never raw SQL,
 # never bypassing invariants. A job holds N items; each item is applied through a BulkTargetPort exactly
 # once (idempotent per (job, item_key)), and its outcome (applied/failed + error) is recorded. Posts NO GL.
+#
+# Tenancy: none, by design (ADR-0029). The module is tenant-agnostic and reusable —
+# it ships no scoping column and no fence declaration. A composing backend-service
+# that wants these tables org-scoped declares them in its tenancy.yaml; the
+# decorator installs org_unit_id, the RLS policy, the kind guard, and per-unit
+# uniques at composition time.
 # =============================================================================
 
 models:
@@ -16,10 +22,6 @@ models:
         type: uuid
         attributes: ["@id", "@default(uuid)"]
         description: "Unique job id"
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Org owner # logical FK to organization.Company.id"
       operation_type:
         type: string
         attributes: ["@required", "@length(max=80)"]
@@ -52,9 +54,10 @@ models:
         type: Metadata
         attributes: ["@audit_metadata"]
         description: "Audit metadata"
-    indexes:
-      - type: index
-        fields: [company_id, status]
+
+    # No tenancy indexes (ADR-0029): the module is tenant-agnostic. The status scan
+    # index (formerly company-leading) and any per-unit uniques are installed by the
+    # composing service's tenancy decorator, not declared here.
 
   - name: BulkJobItem
     collection: bulk_job_items
@@ -68,10 +71,6 @@ models:
         type: uuid
         attributes: ["@required", "@foreign_key(BulkJob.id)"]
         description: "Parent job"
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Org owner # logical FK to organization.Company.id (ADR-0010 fence)"
       item_key:
         type: string
         attributes: ["@required", "@length(max=200)"]
@@ -102,6 +101,8 @@ models:
         description: "Audit metadata"
     indexes:
       # One item per (job, item_key) — the dedup guard so a re-submitted batch never doubles an item.
+      # A DOMAIN invariant, not a tenancy posture: the job pins the tenant, so the per-job unique
+      # needs no scoping column (ADR-0029).
       - type: unique
         fields: [job_id, item_key]
       - type: index

@@ -48,7 +48,6 @@ impl From<BulkJobId> for Uuid {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BulkJobDto {
     pub id: BulkJobId,
-    pub company_id: Uuid,
     pub operation_type: String,
     pub target_module: String,
     pub status: BulkJobStatus,
@@ -111,7 +110,6 @@ impl From<BulkJobItemId> for Uuid {
 pub struct BulkJobItemDto {
     pub id: BulkJobItemId,
     pub job_id: Uuid,
-    pub company_id: Uuid,
     pub item_key: String,
     pub status: BulkItemStatus,
     pub payload: String,

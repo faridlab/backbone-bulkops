@@ -56,12 +56,12 @@ async fn brp1_confirmed_without_reapply() {
     let sink = CapturingSink::new();
 
     let j = svc.create_job(NewJob {
-        company_id: company, operation_type: "lead_import".into(), target_module: "lead".into(),
+        operation_type: "lead_import".into(), target_module: "lead".into(),
         submitted_by: None, items: vec![item("a"), item("b")],
     }).await.unwrap();
     strand(&pool, j, "a").await;
 
-    let sum = svc.reconcile_applying(j, company, &target, &sink, chrono::Duration::minutes(5)).await.unwrap();
+    let sum = scoped(&pool, company, svc.reconcile_applying(j, &target, &sink, chrono::Duration::minutes(5))).await.unwrap();
     assert_eq!(sum.confirmed, 1, "a confirmed from the target's own ledger");
     assert_eq!(sum.reapplied, 0);
     assert_eq!(sum.cancelled, 0);
@@ -93,12 +93,12 @@ async fn brp2_missing_effect_is_reapplied() {
     let sink = CapturingSink::new();
 
     let j = svc.create_job(NewJob {
-        company_id: company, operation_type: "lead_import".into(), target_module: "lead".into(),
+        operation_type: "lead_import".into(), target_module: "lead".into(),
         submitted_by: None, items: vec![item("c")],
     }).await.unwrap();
     strand(&pool, j, "c").await;
 
-    let sum = svc.reconcile_applying(j, company, &target, &sink, chrono::Duration::minutes(5)).await.unwrap();
+    let sum = scoped(&pool, company, svc.reconcile_applying(j, &target, &sink, chrono::Duration::minutes(5))).await.unwrap();
     assert_eq!(sum.reapplied, 1);
     assert_eq!(sum.confirmed, 0);
     assert_eq!(sum.cancelled, 0);
@@ -131,12 +131,12 @@ async fn brp3_unverifiable_item_cancels() {
     let sink = CapturingSink::new();
 
     let j = svc.create_job(NewJob {
-        company_id: company, operation_type: "lead_import".into(), target_module: "lead".into(),
+        operation_type: "lead_import".into(), target_module: "lead".into(),
         submitted_by: None, items: vec![item("d")],
     }).await.unwrap();
     strand(&pool, j, "d").await;
 
-    let sum = svc.reconcile_applying(j, company, &target, &sink, chrono::Duration::minutes(5)).await.unwrap();
+    let sum = scoped(&pool, company, svc.reconcile_applying(j, &target, &sink, chrono::Duration::minutes(5))).await.unwrap();
     assert_eq!(sum.cancelled, 1);
     assert_eq!(sum.confirmed, 0);
     assert_eq!(sum.reapplied, 0);
@@ -174,7 +174,7 @@ async fn brp4_fresh_claim_untouched() {
     let sink = CapturingSink::new();
 
     let j = svc.create_job(NewJob {
-        company_id: company, operation_type: "lead_import".into(), target_module: "lead".into(),
+        operation_type: "lead_import".into(), target_module: "lead".into(),
         submitted_by: None, items: vec![item("e")],
     }).await.unwrap();
     // Reserve without backdating: the claim is brand new, so older_than=1h must not match it.
@@ -183,7 +183,7 @@ async fn brp4_fresh_claim_untouched() {
     )
     .bind(j).execute(&pool).await.unwrap();
 
-    let sum = svc.reconcile_applying(j, company, &target, &sink, chrono::Duration::hours(1)).await.unwrap();
+    let sum = scoped(&pool, company, svc.reconcile_applying(j, &target, &sink, chrono::Duration::hours(1))).await.unwrap();
     assert_eq!(sum.confirmed + sum.reapplied + sum.cancelled, 0, "nothing was reconciled");
     assert_eq!(sum.unfinished, 1, "the live claim still stands");
 
@@ -205,17 +205,17 @@ async fn brp5_run_does_not_mask_cancellation() {
     let sink = CapturingSink::new();
 
     let j = svc.create_job(NewJob {
-        company_id: company, operation_type: "lead_import".into(), target_module: "lead".into(),
+        operation_type: "lead_import".into(), target_module: "lead".into(),
         submitted_by: None, items: vec![item("f"), item("g")],
     }).await.unwrap();
     strand(&pool, j, "f").await;
 
-    let sum = svc.reconcile_applying(j, company, &target, &sink, chrono::Duration::minutes(5)).await.unwrap();
+    let sum = scoped(&pool, company, svc.reconcile_applying(j, &target, &sink, chrono::Duration::minutes(5))).await.unwrap();
     assert_eq!(sum.cancelled, 1);
     assert_eq!(sum.unfinished, 1, "g still pending");
 
     // The operator runs the rest of the batch.
-    let run = svc.run_job(j, company, &FakeTarget::new(), &sink).await.unwrap();
+    let run = scoped(&pool, company, svc.run_job(j, &FakeTarget::new(), &sink)).await.unwrap();
     assert_eq!(run.succeeded, 1);
 
     let (job_status, succeeded): (String, i32) = sqlx::query_as(

@@ -29,9 +29,11 @@ user_owned:
   - "tests/bulk_reconcile_probes.rs"
   # Shared hand-written test helpers (fake + real targets, sinks, pool). Not schema-derived.
   - "tests/common/mod.rs"
-  # Cross-tenant RLS probe (council 2026-08-12 Rec #1): connects a NOBYPASSRLS non-superuser role
-  # and asserts run_job is fenced across tenants. Hand-written — not schema-derived.
-  - "tests/tenant_isolation.rs"
+  # Hand-authored migration (the composition-artifact strip — its ordering guard is hand-written
+  # logic the generator must never read or overwrite; ADR-0029). The module ships no tenancy; the
+  # composing service's decorator installs org scoping and runs first on any database with data.
+  - "migrations/20260910120000_strip_tenancy.up.sql"
+  - "migrations/20260910120000_strip_tenancy.down.sql"
   - "scripts/**"
   # Hand-authored behavior (services + their HTTP surface). Examples:
   # - "src/application/service/onboarding_service.rs"

@@ -20,6 +20,22 @@ pub async fn pool() -> PgPool {
     PgPool::connect(&dburl()).await.expect("connect")
 }
 
+/// Drive `f` inside a company-anchored ambient org scope — the session shape a composing
+/// service establishes (ADR-0029). The engine derives the legacy company key it hands the
+/// target port from this scope; on the scratch database (no org spine, no decorator) the
+/// scope only pins fence variables, so `OrgScope::for_company_unit` — which skips the
+/// org-tree resolver — is the right constructor.
+#[expect(clippy::expect_used, reason = "test harness: a panic here names the setup failure precisely")]
+pub async fn scoped<T>(pool: &PgPool, company: Uuid, f: impl std::future::Future<Output = T>) -> T {
+    backbone_orm::org_scope::with_org_request_scope(
+        pool,
+        backbone_orm::OrgScope::for_company_unit(company),
+        f,
+    )
+    .await
+    .expect("org request scope")
+}
+
 /// A fake target: keeps a key→ack ledger of each applied op, fails any item whose key is in
 /// `fail_keys`, and answers re-checks from that ledger. Set `opaque_keys` to make the re-check itself
 /// fail for chosen keys (a target that cannot answer — the reconcile-to-cancelled path).

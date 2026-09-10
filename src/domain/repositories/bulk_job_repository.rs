@@ -44,7 +44,6 @@ pub struct BulkJobPaginatedResult {
 /// Filter parameters for list queries
 #[derive(Debug, Clone, Default)]
 pub struct BulkJobFilter {
-    pub company_id: Option<Uuid>,
     pub operation_type: Option<String>,
     pub target_module: Option<String>,
     pub status: Option<BulkJobStatus>,
@@ -54,7 +53,7 @@ pub struct BulkJobFilter {
 impl BulkJobFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.company_id.is_some() || self.operation_type.is_some() || self.target_module.is_some() || self.status.is_some() || self.submitted_by.is_some()
+        self.operation_type.is_some() || self.target_module.is_some() || self.status.is_some() || self.submitted_by.is_some()
     }
 }
 

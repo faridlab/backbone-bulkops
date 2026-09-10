@@ -11,6 +11,12 @@ use uuid::Uuid;
 /// One operation to apply through the target module's write path.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BulkOp {
+    /// The legacy company key of the tenant the batch acts for. Tenancy (ADR-0029): this module
+    /// carries no scoping column of its own — the key exists here because the TARGET write path is
+    /// the sibling module's domain and still keys its rows on the legacy company during the tenancy
+    /// transition. The engine sources it from the ambient org scope's company twin and fails the run
+    /// closed when the caller carries none; once a target is itself tenant-agnostic its adapter can
+    /// ignore this field.
     pub company_id: Uuid,
     pub operation_type: String,
     /// The item's idempotency key within the job — a composing adapter forwards it to the target so a
@@ -48,6 +54,10 @@ pub struct BulkRejected {
 /// nothing for the key, so a re-apply is safe; `Err` = the target CANNOT DETERMINE it — the engine then
 /// cancels the item rather than risk a duplicate effect or a silent drop. A target with no by-key
 /// lookup must return `Err`, never guess.
+///
+/// The `company_id` argument carries the same legacy company twin as [`BulkOp::company_id`] — the
+/// target's domain key during the tenancy transition (ADR-0029), fail-closed at the engine when the
+/// caller has no company-anchored scope.
 #[async_trait::async_trait]
 pub trait BulkTargetPort: Send + Sync {
     async fn apply(&self, op: &BulkOp) -> Result<BulkAck, BulkRejected>;

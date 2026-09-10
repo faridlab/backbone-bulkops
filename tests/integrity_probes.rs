@@ -1,5 +1,5 @@
 //! Integrity probes — the batch invariants: a job needs items, an item needs a key, and the job's counts
-//! roll up from the item ledger (authoritative across runs).
+//! roll up from the item ledger (authoritative across runs) — including under two concurrent runs.
 
 mod common;
 use common::*;
@@ -18,7 +18,7 @@ async fn bip1_job_needs_items() {
     let pool = pool().await;
     let svc = BulkWriteService::new(pool.clone());
     let r = svc.create_job(NewJob {
-        company_id: Uuid::new_v4(), operation_type: "x".into(), target_module: "crm".into(),
+        operation_type: "x".into(), target_module: "crm".into(),
         submitted_by: None, items: vec![],
     }).await;
     assert!(matches!(r, Err(BulkError::Invalid(_))));
@@ -30,7 +30,7 @@ async fn bip2_item_needs_key() {
     let pool = pool().await;
     let svc = BulkWriteService::new(pool.clone());
     let r = svc.create_job(NewJob {
-        company_id: Uuid::new_v4(), operation_type: "x".into(), target_module: "crm".into(),
+        operation_type: "x".into(), target_module: "crm".into(),
         submitted_by: None, items: vec![NewItem { item_key: "  ".into(), payload: json!({}) }],
     }).await;
     assert!(matches!(r, Err(BulkError::Invalid(_))));
@@ -43,14 +43,14 @@ async fn bip3_counts_rollup_from_ledger() {
     let company = Uuid::new_v4();
     let svc = BulkWriteService::new(pool.clone());
     let j = svc.create_job(NewJob {
-        company_id: company, operation_type: "lead_import".into(), target_module: "crm".into(),
+        operation_type: "lead_import".into(), target_module: "crm".into(),
         submitted_by: None, items: vec![item("a"), item("b"), item("c")],
     }).await.unwrap();
 
     // First run fails b; second run (b still fails) — counts reflect the full ledger, not just this run.
-    svc.run_job(j, company, &FakeTarget::failing(&["b"]), &CapturingSink::new()).await.unwrap();
+    scoped(&pool, company, svc.run_job(j, &FakeTarget::failing(&["b"]), &CapturingSink::new())).await.unwrap();
     let sink = CapturingSink::new();
-    svc.run_job(j, company, &FakeTarget::failing(&["b"]), &sink).await.unwrap();
+    scoped(&pool, company, svc.run_job(j, &FakeTarget::failing(&["b"]), &sink)).await.unwrap();
 
     let (succ, fail): (i32, i32) = sqlx::query_as(
         "SELECT succeeded_count, failed_count FROM bulkops.bulk_jobs WHERE id=$1")
@@ -69,17 +69,18 @@ async fn bip4_concurrent_runs_apply_once() {
     let svc = BulkWriteService::new(pool.clone());
     let target = FakeTarget::new();
     let j = svc.create_job(NewJob {
-        company_id: company, operation_type: "lead_import".into(), target_module: "crm".into(),
+        operation_type: "lead_import".into(), target_module: "crm".into(),
         submitted_by: None,
         items: (0..8).map(|i| item(&format!("i{i}"))).collect(),
     }).await.unwrap();
 
-    // Two runners race the same job on the same pool.
+    // Two runners race the same job on the same pool, each in its own org-scoped session.
     let (svc1, svc2) = (BulkWriteService::new(pool.clone()), BulkWriteService::new(pool.clone()));
     let (t1, t2) = (target.clone(), target.clone());
+    let (p1, p2) = (pool.clone(), pool.clone());
     let (r1, r2) = tokio::join!(
-        async move { svc1.run_job(j, company, &t1, &CapturingSink::new()).await },
-        async move { svc2.run_job(j, company, &t2, &CapturingSink::new()).await },
+        async move { scoped(&p1, company, svc1.run_job(j, &t1, &CapturingSink::new())).await },
+        async move { scoped(&p2, company, svc2.run_job(j, &t2, &CapturingSink::new())).await },
     );
     r1.unwrap();
     r2.unwrap();

@@ -33,9 +33,6 @@ use crate::domain::entity::BulkJobStatus;
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBulkJobDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "operation_type")]
     pub operation_type: String,
@@ -69,9 +66,6 @@ pub struct CreateBulkJobDto {
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBulkJobDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "operation_type")]
     pub operation_type: String,
@@ -105,9 +99,6 @@ pub struct UpdateBulkJobDto {
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct PatchBulkJobDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "operation_type")]
     pub operation_type: Option<String>,
@@ -132,7 +123,7 @@ pub struct PatchBulkJobDto {
 impl PatchBulkJobDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.company_id.is_some() || self.operation_type.is_some() || self.target_module.is_some() || self.status.is_some() || self.total_items.is_some() || self.succeeded_count.is_some() || self.failed_count.is_some() || self.submitted_by.is_some()
+        self.operation_type.is_some() || self.target_module.is_some() || self.status.is_some() || self.total_items.is_some() || self.succeeded_count.is_some() || self.failed_count.is_some() || self.submitted_by.is_some()
     }
 }
 
@@ -150,8 +141,6 @@ impl PatchBulkJobDto {
 pub struct BulkJobResponseDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub operation_type: String,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
@@ -221,9 +210,9 @@ impl BulkJobListResponseDto {
 #[serde(rename_all = "camelCase")]
 pub struct BulkJobSummaryDto {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub operation_type: String,
     pub target_module: String,
+    pub status: BulkJobStatus,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -235,7 +224,6 @@ impl From<BulkJob> for BulkJobResponseDto {
     fn from(entity: BulkJob) -> Self {
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             operation_type: entity.operation_type,
             target_module: entity.target_module,
             status: entity.status,
@@ -253,9 +241,9 @@ impl From<BulkJob> for BulkJobSummaryDto {
         let created_at = backbone_core::PersistentEntity::created_at(&entity);
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             operation_type: entity.operation_type,
             target_module: entity.target_module,
+            status: entity.status,
             created_at,
         }
     }
@@ -265,7 +253,6 @@ impl From<CreateBulkJobDto> for BulkJob {
     fn from(dto: CreateBulkJobDto) -> Self {
         Self {
             id: Uuid::new_v4(),
-            company_id: dto.company_id,
             operation_type: dto.operation_type,
             target_module: dto.target_module,
             status: dto.status,
@@ -282,7 +269,6 @@ impl From<&BulkJob> for BulkJobResponseDto {
     fn from(entity: &BulkJob) -> Self {
         Self {
             id: entity.id.clone(),
-            company_id: entity.company_id.clone(),
             operation_type: entity.operation_type.clone(),
             target_module: entity.target_module.clone(),
             status: entity.status.clone(),
@@ -303,7 +289,6 @@ impl backbone_core::FromCreateDto<CreateBulkJobDto> for BulkJob {
 
 impl backbone_core::ApplyUpdateDto<UpdateBulkJobDto> for BulkJob {
     fn apply_update(mut self, dto: UpdateBulkJobDto) -> backbone_core::ServiceResult<Self> {
-        self.company_id = dto.company_id;
         self.operation_type = dto.operation_type;
         self.target_module = dto.target_module;
         self.status = dto.status;

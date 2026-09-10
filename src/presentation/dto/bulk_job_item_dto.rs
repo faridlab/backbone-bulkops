@@ -36,9 +36,6 @@ pub struct CreateBulkJobItemDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "job_id")]
     pub job_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "item_key")]
     pub item_key: String,
@@ -69,9 +66,6 @@ pub struct UpdateBulkJobItemDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(alias = "job_id")]
     pub job_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "item_key")]
     pub item_key: String,
@@ -102,9 +96,6 @@ pub struct PatchBulkJobItemDto {
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "job_id")]
     pub job_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "item_key")]
     pub item_key: Option<String>,
@@ -124,7 +115,7 @@ pub struct PatchBulkJobItemDto {
 impl PatchBulkJobItemDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.job_id.is_some() || self.company_id.is_some() || self.item_key.is_some() || self.status.is_some() || self.payload.is_some() || self.applied_ref_type.is_some() || self.applied_ref_id.is_some() || self.error_detail.is_some()
+        self.job_id.is_some() || self.item_key.is_some() || self.status.is_some() || self.payload.is_some() || self.applied_ref_type.is_some() || self.applied_ref_id.is_some() || self.error_detail.is_some()
     }
 }
 
@@ -144,8 +135,6 @@ pub struct BulkJobItemResponseDto {
     pub id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub job_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub item_key: String,
     pub status: BulkItemStatus,
@@ -212,8 +201,8 @@ impl BulkJobItemListResponseDto {
 pub struct BulkJobItemSummaryDto {
     pub id: Uuid,
     pub job_id: Uuid,
-    pub company_id: Uuid,
     pub item_key: String,
+    pub status: BulkItemStatus,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -226,7 +215,6 @@ impl From<BulkJobItem> for BulkJobItemResponseDto {
         Self {
             id: entity.id,
             job_id: entity.job_id,
-            company_id: entity.company_id,
             item_key: entity.item_key,
             status: entity.status,
             payload: entity.payload,
@@ -244,8 +232,8 @@ impl From<BulkJobItem> for BulkJobItemSummaryDto {
         Self {
             id: entity.id,
             job_id: entity.job_id,
-            company_id: entity.company_id,
             item_key: entity.item_key,
+            status: entity.status,
             created_at,
         }
     }
@@ -256,7 +244,6 @@ impl From<CreateBulkJobItemDto> for BulkJobItem {
         Self {
             id: Uuid::new_v4(),
             job_id: dto.job_id,
-            company_id: dto.company_id,
             item_key: dto.item_key,
             status: dto.status,
             payload: dto.payload,
@@ -273,7 +260,6 @@ impl From<&BulkJobItem> for BulkJobItemResponseDto {
         Self {
             id: entity.id.clone(),
             job_id: entity.job_id.clone(),
-            company_id: entity.company_id.clone(),
             item_key: entity.item_key.clone(),
             status: entity.status.clone(),
             payload: entity.payload.clone(),
@@ -294,7 +280,6 @@ impl backbone_core::FromCreateDto<CreateBulkJobItemDto> for BulkJobItem {
 impl backbone_core::ApplyUpdateDto<UpdateBulkJobItemDto> for BulkJobItem {
     fn apply_update(mut self, dto: UpdateBulkJobItemDto) -> backbone_core::ServiceResult<Self> {
         self.job_id = dto.job_id;
-        self.company_id = dto.company_id;
         self.item_key = dto.item_key;
         self.status = dto.status;
         self.payload = dto.payload;

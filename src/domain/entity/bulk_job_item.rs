@@ -51,7 +51,6 @@ impl std::ops::Deref for BulkJobItemId {
 pub struct BulkJobItem {
     pub id: Uuid,
     pub job_id: Uuid,
-    pub company_id: Uuid,
     pub item_key: String,
     pub status: BulkItemStatus,
     pub payload: String,
@@ -70,11 +69,10 @@ impl BulkJobItem {
     }
 
     /// Create a new BulkJobItem with required fields
-    pub fn new(job_id: Uuid, company_id: Uuid, item_key: String, status: BulkItemStatus, payload: String) -> Self {
+    pub fn new(job_id: Uuid, item_key: String, status: BulkItemStatus, payload: String) -> Self {
         Self {
             id: Uuid::new_v4(),
             job_id,
-            company_id,
             item_key,
             status,
             payload,
@@ -174,9 +172,6 @@ impl BulkJobItem {
                 "job_id" => {
                     if let Ok(v) = serde_json::from_value(value) { self.job_id = v; }
                 }
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "item_key" => {
                     if let Ok(v) = serde_json::from_value(value) { self.item_key = v; }
                 }
@@ -250,16 +245,12 @@ impl backbone_orm::EntityRepoMeta for BulkJobItem {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
         m.insert("job_id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("applied_ref_id".to_string(), "uuid".to_string());
         m.insert("status".to_string(), "bulk_item_status".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &["item_key", "payload"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -270,7 +261,6 @@ impl backbone_orm::EntityRepoMeta for BulkJobItem {
 #[derive(Debug, Clone, Default)]
 pub struct BulkJobItemBuilder {
     job_id: Option<Uuid>,
-    company_id: Option<Uuid>,
     item_key: Option<String>,
     status: Option<BulkItemStatus>,
     payload: Option<String>,
@@ -283,12 +273,6 @@ impl BulkJobItemBuilder {
     /// Set the job_id field (required)
     pub fn job_id(mut self, value: Uuid) -> Self {
         self.job_id = Some(value);
-        self
-    }
-
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
         self
     }
 
@@ -333,14 +317,12 @@ impl BulkJobItemBuilder {
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<BulkJobItem, String> {
         let job_id = self.job_id.ok_or_else(|| "job_id is required".to_string())?;
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let item_key = self.item_key.ok_or_else(|| "item_key is required".to_string())?;
         let payload = self.payload.ok_or_else(|| "payload is required".to_string())?;
 
         Ok(BulkJobItem {
             id: Uuid::new_v4(),
             job_id,
-            company_id,
             item_key,
             status: self.status.unwrap_or_default(),
             payload,

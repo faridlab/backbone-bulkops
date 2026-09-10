@@ -755,7 +755,6 @@ components:
       type: object
       required:
         - id
-        - company_id
         - operation_type
         - target_module
         - status
@@ -765,9 +764,6 @@ components:
         - metadata
       properties:
         id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         operation_type:
@@ -808,7 +804,6 @@ components:
     CreateBulkJobRequest:
       type: object
       required:
-        - company_id
         - operation_type
         - target_module
         - status
@@ -817,9 +812,6 @@ components:
         - failed_count
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         operation_type:
           type: string
         target_module:
@@ -845,7 +837,6 @@ components:
     UpdateBulkJobRequest:
       type: object
       required:
-        - company_id
         - operation_type
         - target_module
         - status
@@ -854,9 +845,6 @@ components:
         - failed_count
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         operation_type:
           type: string
         target_module:
@@ -882,9 +870,6 @@ components:
     PatchBulkJobRequest:
       type: object
       properties:
-        company_id:
-          type: string
-          format: uuid
         operation_type:
           type: string
         target_module:
@@ -922,7 +907,6 @@ components:
       required:
         - id
         - job_id
-        - company_id
         - item_key
         - status
         - payload
@@ -932,9 +916,6 @@ components:
           type: string
           format: uuid
         job_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_key:
@@ -973,16 +954,12 @@ components:
       type: object
       required:
         - job_id
-        - company_id
         - item_key
         - status
         - payload
         - metadata
       properties:
         job_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_key:
@@ -1008,16 +985,12 @@ components:
       type: object
       required:
         - job_id
-        - company_id
         - item_key
         - status
         - payload
         - metadata
       properties:
         job_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_key:
@@ -1043,9 +1016,6 @@ components:
       type: object
       properties:
         job_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         item_key:

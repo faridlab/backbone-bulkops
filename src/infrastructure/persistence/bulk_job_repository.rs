@@ -12,7 +12,7 @@ use anyhow::Result;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 
 use crate::domain::entity::BulkJob;
 
@@ -44,10 +44,10 @@ impl BulkJobRepository {
 /// Mirrors the raw column shape rather than the `BulkJob` entity: `status` is the literal `'pending'`
 /// and the three counters start at 0 — none are parameters, exactly as the original write had them.
 /// `total_items` is stamped afterwards by [`BulkJobRepository::set_total_items`], once the items that
-/// actually survived the (job, item_key) dedup are known.
+/// actually survived the (job, item_key) dedup are known. Tenancy (ADR-0029): no scoping column —
+/// a composing service's decorator stamps org ownership at composition time.
 pub struct NewJobRow<'a> {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub operation_type: &'a str,
     pub target_module: &'a str,
     pub submitted_by: Option<Uuid>,
@@ -55,7 +55,6 @@ pub struct NewJobRow<'a> {
 
 /// What a run needs to know about its job before it drives the target port.
 pub struct JobRunRow {
-    pub company_id: Uuid,
     pub operation_type: String,
 }
 
@@ -65,8 +64,8 @@ impl BulkJobRepository {
     /// Insert the job header.
     ///
     /// Takes the CALLER'S connection so the header and its items commit as ONE unit — a job must never
-    /// exist without the items it claims. The caller has already bound the job's company on it
-    /// (`bind_company_on`) — don't re-bind here.
+    /// exist without the items it claims. The caller has already relayed the ambient org scope onto it
+    /// (`org_scope::bind_org_scope_on`) — don't re-bind here.
     pub async fn insert_job(
         &self,
         conn: &mut sqlx::PgConnection,
@@ -74,11 +73,11 @@ impl BulkJobRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO bulkops.bulk_jobs
-                 (id, company_id, operation_type, target_module, status, total_items, succeeded_count,
+                 (id, operation_type, target_module, status, total_items, succeeded_count,
                   failed_count, submitted_by)
-               VALUES ($1,$2,$3,$4,'pending'::bulk_job_status,0,0,0,$5)"#,
+               VALUES ($1,$2,$3,'pending'::bulk_job_status,0,0,0,$4)"#,
         )
-        .bind(j.id).bind(j.company_id).bind(j.operation_type).bind(j.target_module).bind(j.submitted_by)
+        .bind(j.id).bind(j.operation_type).bind(j.target_module).bind(j.submitted_by)
         .execute(conn)
         .await?;
         Ok(())
@@ -99,32 +98,31 @@ impl BulkJobRepository {
         Ok(())
     }
 
-    /// Read the company/operation a run applies under. `Ok(None)` = no such job in scope.
+    /// Read the operation a run applies under. `Ok(None)` = no such job in scope.
     ///
-    /// ID-only: a run is identified by the job id alone — there is no company argument to scope from up
-    /// front. This read rides the REQUEST-dedicated connection (which carries the caller's
-    /// `app.company_id`), so another company's job is simply not found. When driven by a JOB/EVENT rather
-    /// than HTTP, the CALLER must wrap this in `with_company_scope(Some(company_id))` or it fails closed.
+    /// ID-only: a run is identified by the job id alone. Tenancy (ADR-0029): the module owns no
+    /// fence — this read rides the AMBIENT org scope via `org_scope::fetch_optional_row_scoped`
+    /// (the request-dedicated connection a composing service scoped), so under a decorated
+    /// deployment another tenant's job is simply not found. With no ambient scope the read runs
+    /// plainly on the pool — the tenant-agnostic posture of an undecorated deployment.
     pub async fn fetch_for_run(
         &self,
         pool: &PgPool,
         job_id: Uuid,
     ) -> Result<Option<JobRunRow>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
-                "SELECT company_id, operation_type FROM bulkops.bulk_jobs WHERE id=$1 AND (metadata->>'deleted_at') IS NULL")
+                "SELECT operation_type FROM bulkops.bulk_jobs WHERE id=$1 AND (metadata->>'deleted_at') IS NULL")
                 .bind(job_id),
         )
         .await?;
-        Ok(row.map(|r| JobRunRow {
-            company_id: r.get("company_id"), operation_type: r.get("operation_type"),
-        }))
+        Ok(row.map(|r| JobRunRow { operation_type: r.get("operation_type") }))
     }
 
-    /// Mark the job running. ID-only, same RLS contract as [`Self::fetch_for_run`].
+    /// Mark the job running. ID-only, same scope contract as [`Self::fetch_for_run`].
     pub async fn mark_running(&self, pool: &PgPool, job_id: Uuid) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query("UPDATE bulkops.bulk_jobs SET status='running'::bulk_job_status WHERE id=$1")
                 .bind(job_id),
@@ -135,7 +133,7 @@ impl BulkJobRepository {
 
     /// Write the job's terminal status and counts, rolled up from the item ledger by the caller.
     /// `status` binds as `&str` with a DB-side `::bulk_job_status` cast, so a bad value fails as a DB
-    /// error rather than a deserialize panic. ID-only, same RLS contract as [`Self::fetch_for_run`].
+    /// error rather than a deserialize panic. ID-only, same scope contract as [`Self::fetch_for_run`].
     pub async fn set_outcome(
         &self,
         pool: &PgPool,
@@ -144,7 +142,7 @@ impl BulkJobRepository {
         succeeded_count: i32,
         failed_count: i32,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE bulkops.bulk_jobs
@@ -156,14 +154,16 @@ impl BulkJobRepository {
         .map(|_| ())
     }
 
-    /// Read the job's stamped item count (for the completion event). ID-only, same RLS contract as
+    /// Read the job's stamped item count (for the completion event). ID-only, same scope contract as
     /// [`Self::fetch_for_run`].
     pub async fn fetch_total_items(&self, pool: &PgPool, job_id: Uuid) -> Result<i32, sqlx::Error> {
-        company_scope::fetch_one_scalar_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
-            sqlx::query_scalar("SELECT total_items FROM bulkops.bulk_jobs WHERE id=$1").bind(job_id),
+            sqlx::query("SELECT total_items FROM bulkops.bulk_jobs WHERE id=$1").bind(job_id),
         )
-        .await
+        .await?;
+        row.map(|r| r.get::<i32, _>("total_items"))
+            .ok_or(sqlx::Error::RowNotFound)
     }
 }
 

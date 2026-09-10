@@ -13,7 +13,7 @@ use anyhow::Result;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 
 use crate::domain::entity::BulkJobItem;
 
@@ -44,11 +44,11 @@ impl BulkJobItemRepository {
 ///
 /// Mirrors the raw column shape rather than the `BulkJobItem` entity: `status` is the literal
 /// `'pending'`, and `payload` is the already-serialized JSON TEXT the column holds — the caller does the
-/// `to_string()`, as the original write did.
+/// `to_string()`, as the original write did. Tenancy (ADR-0029): no scoping column — a composing
+/// service's decorator stamps org ownership at composition time.
 pub struct NewItemRow<'a> {
     pub id: Uuid,
     pub job_id: Uuid,
-    pub company_id: Uuid,
     pub item_key: &'a str,
     pub payload: &'a str,
 }
@@ -83,18 +83,18 @@ impl BulkJobItemRepository {
     /// Returns the rows affected so the caller can count what actually landed.
     ///
     /// Takes the CALLER'S connection so the items and their job header commit as ONE unit. The caller has
-    /// already bound the job's company on it (`bind_company_on`) — don't re-bind here.
+    /// already relayed the ambient org scope onto it (`org_scope::bind_org_scope_on`) — don't re-bind here.
     pub async fn insert_item(
         &self,
         conn: &mut sqlx::PgConnection,
         it: &NewItemRow<'_>,
     ) -> Result<u64, sqlx::Error> {
         let done = sqlx::query(
-            r#"INSERT INTO bulkops.bulk_job_items (id, job_id, company_id, item_key, status, payload)
-               VALUES ($1,$2,$3,$4,'pending'::bulk_item_status,$5)
+            r#"INSERT INTO bulkops.bulk_job_items (id, job_id, item_key, status, payload)
+               VALUES ($1,$2,$3,'pending'::bulk_item_status,$4)
                ON CONFLICT (job_id, item_key) DO NOTHING"#,
         )
-        .bind(it.id).bind(it.job_id).bind(it.company_id).bind(it.item_key).bind(it.payload)
+        .bind(it.id).bind(it.job_id).bind(it.item_key).bind(it.payload)
         .execute(conn)
         .await?;
         Ok(done.rows_affected())
@@ -103,21 +103,24 @@ impl BulkJobItemRepository {
     /// Load the job's still-`pending` items — the run's work list. That predicate is what makes a re-run
     /// idempotent: an already-applied item is never picked up again.
     ///
-    /// ID-only, fenced by the caller's connection scope — see [`Self::reserve`].
+    /// ID-only, same scope contract as [`Self::reserve`].
     pub async fn fetch_pending(
         &self,
         pool: &PgPool,
         job_id: Uuid,
     ) -> Result<Vec<PendingItemRow>, sqlx::Error> {
-        let rows = company_scope::fetch_all_rows_scoped(
-            pool,
-            sqlx::query(
-                r#"SELECT id, item_key, payload FROM bulkops.bulk_job_items
-                   WHERE job_id=$1 AND status='pending'::bulk_item_status"#,
-            )
-            .bind(job_id),
+        let mut tx = pool.begin().await?;
+        if let Some(scope) = org_scope::current_org_scope() {
+            org_scope::bind_org_scope_on(&mut tx, &scope).await?;
+        }
+        let rows = sqlx::query(
+            r#"SELECT id, item_key, payload FROM bulkops.bulk_job_items
+               WHERE job_id=$1 AND status='pending'::bulk_item_status"#,
         )
+        .bind(job_id)
+        .fetch_all(&mut *tx)
         .await?;
+        tx.commit().await?;
         Ok(rows
             .iter()
             .map(|r| PendingItemRow {
@@ -133,12 +136,11 @@ impl BulkJobItemRepository {
     /// This CAS must stay BEFORE the apply. It protects the APPLY, not just the count — moving it after
     /// would let two concurrent runs both apply the same item (maturity council 2026-07-10).
     ///
-    /// ID-only: no company argument. The update rides the connection carrying the caller's
-    /// `app.company_id`, so another company's item is simply not matched. A non-request caller must wrap
-    /// the whole run in `with_company_scope(Some(company_id))` — otherwise this fails closed and every
-    /// item is skipped.
+    /// ID-only. Tenancy (ADR-0029): the module owns no fence — the update rides the AMBIENT org scope
+    /// via `org_scope::execute_scoped` (the request-dedicated connection a composing service scoped),
+    /// so under a decorated deployment another tenant's item is simply not matched.
     pub async fn reserve(&self, pool: &PgPool, item_id: Uuid) -> Result<u64, sqlx::Error> {
-        let done = company_scope::execute_scoped(
+        let done = org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE bulkops.bulk_job_items SET status='applying'::bulk_item_status
@@ -151,7 +153,7 @@ impl BulkJobItemRepository {
     }
 
     /// Record a successful apply, pointing at what the target write path created. State-guarded on
-    /// `applying` — only the reserver can close its own item out. ID-only, same RLS contract as
+    /// `applying` — only the reserver can close its own item out. ID-only, same scope contract as
     /// [`Self::reserve`].
     pub async fn mark_applied(
         &self,
@@ -160,7 +162,7 @@ impl BulkJobItemRepository {
         applied_ref_type: &str,
         applied_ref_id: Uuid,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE bulkops.bulk_job_items
@@ -174,14 +176,14 @@ impl BulkJobItemRepository {
     }
 
     /// Record a failed apply — the isolation step that lets the batch continue. State-guarded on
-    /// `applying`; ID-only, same RLS contract as [`Self::reserve`].
+    /// `applying`; ID-only, same scope contract as [`Self::reserve`].
     pub async fn mark_failed(
         &self,
         pool: &PgPool,
         item_id: Uuid,
         error_detail: &str,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE bulkops.bulk_job_items
@@ -195,13 +197,13 @@ impl BulkJobItemRepository {
     }
 
     /// The job's authoritative applied/failed/cancelled tally, counted DB-side across ALL runs. ID-only,
-    /// same RLS contract as [`Self::reserve`].
+    /// same scope contract as [`Self::reserve`].
     pub async fn count_outcomes(
         &self,
         pool: &PgPool,
         job_id: Uuid,
     ) -> Result<ItemCountsRow, sqlx::Error> {
-        let r = company_scope::fetch_one_row_scoped(
+        let r = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"SELECT
@@ -212,7 +214,8 @@ impl BulkJobItemRepository {
             )
             .bind(job_id),
         )
-        .await?;
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)?;
         Ok(ItemCountsRow { applied: r.get("applied"), failed: r.get("failed"), cancelled: r.get("cancelled") })
     }
 
@@ -220,25 +223,28 @@ impl BulkJobItemRepository {
     /// crash residue `reconcile_applying` re-checks against the target. Age comes from the audit
     /// trigger's `updated_at` (stamped when `reserve` claimed the item); an `applying` row with no
     /// parseable `updated_at` is NOT matched (it stays `applying` — conservative, never auto-resolved).
-    /// ID-only, same RLS contract as [`Self::reserve`].
+    /// ID-only, same scope contract as [`Self::reserve`].
     pub async fn fetch_applying_stale(
         &self,
         pool: &PgPool,
         job_id: Uuid,
         older_than_secs: i64,
     ) -> Result<Vec<PendingItemRow>, sqlx::Error> {
-        let rows = company_scope::fetch_all_rows_scoped(
-            pool,
-            sqlx::query(
-                r#"SELECT id, item_key, payload FROM bulkops.bulk_job_items
-                   WHERE job_id=$1 AND status='applying'::bulk_item_status
-                     AND (metadata->>'updated_at')::timestamptz < now() - make_interval(secs => $2)
-                   ORDER BY item_key"#,
-            )
-            .bind(job_id)
-            .bind(older_than_secs),
+        let mut tx = pool.begin().await?;
+        if let Some(scope) = org_scope::current_org_scope() {
+            org_scope::bind_org_scope_on(&mut tx, &scope).await?;
+        }
+        let rows = sqlx::query(
+            r#"SELECT id, item_key, payload FROM bulkops.bulk_job_items
+               WHERE job_id=$1 AND status='applying'::bulk_item_status
+                 AND (metadata->>'updated_at')::timestamptz < now() - make_interval(secs => $2)
+               ORDER BY item_key"#,
         )
+        .bind(job_id)
+        .bind(older_than_secs)
+        .fetch_all(&mut *tx)
         .await?;
+        tx.commit().await?;
         Ok(rows
             .iter()
             .map(|r| PendingItemRow {
@@ -248,25 +254,27 @@ impl BulkJobItemRepository {
     }
 
     /// How many of the job's items are still short of a terminal state (`pending` + `applying`) — the
-    /// reconciler's "is the job done now?" check. ID-only, same RLS contract as [`Self::reserve`].
+    /// reconciler's "is the job done now?" check. ID-only, same scope contract as [`Self::reserve`].
     pub async fn count_unfinished(
         &self,
         pool: &PgPool,
         job_id: Uuid,
     ) -> Result<i64, sqlx::Error> {
-        company_scope::fetch_one_scalar_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
-            sqlx::query_scalar(
-                r#"SELECT count(*) FROM bulkops.bulk_job_items
+            sqlx::query(
+                r#"SELECT count(*) AS unfinished FROM bulkops.bulk_job_items
                    WHERE job_id=$1 AND status IN ('pending'::bulk_item_status, 'applying'::bulk_item_status)"#,
             )
             .bind(job_id),
         )
-        .await
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)?;
+        Ok(row.get("unfinished"))
     }
 
     /// Record a CANCELLED item — the terminal exit for a stale `applying` claim the target could neither
-    /// confirm nor safely re-apply. State-guarded on `applying`; ID-only, same RLS contract as
+    /// confirm nor safely re-apply. State-guarded on `applying`; ID-only, same scope contract as
     /// [`Self::reserve`].
     pub async fn mark_cancelled(
         &self,
@@ -274,7 +282,7 @@ impl BulkJobItemRepository {
         item_id: Uuid,
         reason: &str,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE bulkops.bulk_job_items
@@ -288,22 +296,25 @@ impl BulkJobItemRepository {
     }
 
     /// The job's failed items with key, error, and payload — the operator's failure report. ID-only, same
-    /// RLS contract as [`Self::reserve`], so another company's job reports no failures.
+    /// scope contract as [`Self::reserve`], so another tenant's job reports no failures.
     pub async fn fetch_failed(
         &self,
         pool: &PgPool,
         job_id: Uuid,
     ) -> Result<Vec<FailedItemRow>, sqlx::Error> {
-        let rows = company_scope::fetch_all_rows_scoped(
-            pool,
-            sqlx::query(
-                r#"SELECT item_key, error_detail, payload FROM bulkops.bulk_job_items
-                   WHERE job_id=$1 AND status='failed'::bulk_item_status
-                   ORDER BY item_key"#,
-            )
-            .bind(job_id),
+        let mut tx = pool.begin().await?;
+        if let Some(scope) = org_scope::current_org_scope() {
+            org_scope::bind_org_scope_on(&mut tx, &scope).await?;
+        }
+        let rows = sqlx::query(
+            r#"SELECT item_key, error_detail, payload FROM bulkops.bulk_job_items
+               WHERE job_id=$1 AND status='failed'::bulk_item_status
+               ORDER BY item_key"#,
         )
+        .bind(job_id)
+        .fetch_all(&mut *tx)
         .await?;
+        tx.commit().await?;
         Ok(rows
             .iter()
             .map(|r| FailedItemRow {
@@ -315,9 +326,9 @@ impl BulkJobItemRepository {
     }
 
     /// Reset the job's FAILED items to `pending` so a re-run picks up just them, clearing the stale error.
-    /// Returns the number requeued. ID-only, same RLS contract as [`Self::reserve`].
+    /// Returns the number requeued. ID-only, same scope contract as [`Self::reserve`].
     pub async fn requeue_failed(&self, pool: &PgPool, job_id: Uuid) -> Result<u64, sqlx::Error> {
-        let done = company_scope::execute_scoped(
+        let done = org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE bulkops.bulk_job_items

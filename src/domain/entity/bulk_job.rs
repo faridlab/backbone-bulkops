@@ -50,7 +50,6 @@ impl std::ops::Deref for BulkJobId {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct BulkJob {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub operation_type: String,
     pub target_module: String,
     pub status: BulkJobStatus,
@@ -70,10 +69,9 @@ impl BulkJob {
     }
 
     /// Create a new BulkJob with required fields
-    pub fn new(company_id: Uuid, operation_type: String, target_module: String, status: BulkJobStatus, total_items: i32, succeeded_count: i32, failed_count: i32) -> Self {
+    pub fn new(operation_type: String, target_module: String, status: BulkJobStatus, total_items: i32, succeeded_count: i32, failed_count: i32) -> Self {
         Self {
             id: Uuid::new_v4(),
-            company_id,
             operation_type,
             target_module,
             status,
@@ -159,9 +157,6 @@ impl BulkJob {
     pub fn apply_patch(&mut self, fields: std::collections::HashMap<String, serde_json::Value>) {
         for (key, value) in fields {
             match key.as_str() {
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "operation_type" => {
                     if let Ok(v) = serde_json::from_value(value) { self.operation_type = v; }
                 }
@@ -237,15 +232,11 @@ impl backbone_orm::EntityRepoMeta for BulkJob {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("status".to_string(), "bulk_job_status".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
         &["operation_type", "target_module"]
-    }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
     }
 }
 
@@ -255,7 +246,6 @@ impl backbone_orm::EntityRepoMeta for BulkJob {
 /// System fields (id, metadata, timestamps) are auto-initialized.
 #[derive(Debug, Clone, Default)]
 pub struct BulkJobBuilder {
-    company_id: Option<Uuid>,
     operation_type: Option<String>,
     target_module: Option<String>,
     status: Option<BulkJobStatus>,
@@ -266,12 +256,6 @@ pub struct BulkJobBuilder {
 }
 
 impl BulkJobBuilder {
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Set the operation_type field (required)
     pub fn operation_type(mut self, value: String) -> Self {
         self.operation_type = Some(value);
@@ -318,13 +302,11 @@ impl BulkJobBuilder {
     ///
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<BulkJob, String> {
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
         let operation_type = self.operation_type.ok_or_else(|| "operation_type is required".to_string())?;
         let target_module = self.target_module.ok_or_else(|| "target_module is required".to_string())?;
 
         Ok(BulkJob {
             id: Uuid::new_v4(),
-            company_id,
             operation_type,
             target_module,
             status: self.status.unwrap_or_default(),
