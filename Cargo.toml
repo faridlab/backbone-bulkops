@@ -3,6 +3,7 @@ name = "backbone-bulkops"
 version = "0.6.19"
 edition = "2021"
 description = "Audited, idempotent batch operations that drive each module's write path through a port seam"
+license = "MIT OR Apache-2.0"
 
 [lib]
 path = "src/lib.rs"
