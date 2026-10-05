@@ -14,6 +14,9 @@ user_owned:
   - "src/application/service/bulk_events.rs"
   - "src/application/service/bulk_ports.rs"
   - "src/application/service/bulk_write_service.rs"
+  # The composer-installed request-pool shim the write service resolves its database
+  # through (ADR-0029 pool law): hand-written, never schema-derived.
+  - "src/request_pool.rs"
   # Own the hand-written bulkops SQL (the job header + (job, item_key)-deduped item inserts, the CAS
   # reserve that makes each apply at-most-once, the applied/failed outcome ledger, the counts roll-up,
   # the failure report, the requeue) that the write service orchestrates. Declared here — not renamed

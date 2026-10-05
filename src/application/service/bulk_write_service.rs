@@ -101,6 +101,13 @@ impl BulkWriteService {
         Self { pool, jobs, items }
     }
 
+    /// The database this call runs on: the composer's request pool when one
+    /// is bound (a tenant mount, or a relay consumer wrapped by the host),
+    /// else the composed pool (ADR-0029 pool law).
+    pub(super) fn rpool(&self) -> PgPool {
+        crate::request_pool::current().unwrap_or_else(|| self.pool.clone())
+    }
+
     /// Create an audited batch of `pending` items. Items dedup on (job, item_key), so a duplicate key
     /// within the batch is collapsed. Requires ≥1 item.
     pub async fn create_job(&self, j: NewJob) -> Result<Uuid, BulkError> {
@@ -111,7 +118,7 @@ impl BulkWriteService {
             return Err(BulkError::Invalid("a job needs at least one item".into()));
         }
         let job_id = Uuid::new_v4();
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.rpool().begin().await?;
         // Tenancy posture (ADR-0029): the module owns no scoping column — the composing
         // service's tenancy decorator does. Relay the AMBIENT request scope onto this
         // transaction when the caller bound one, so the decorator's org-unit fill (and any
@@ -170,14 +177,14 @@ impl BulkWriteService {
 
         let job = self
             .jobs
-            .fetch_for_run(&self.pool, job_id)
+            .fetch_for_run(&self.rpool(), job_id)
             .await?
             .ok_or(BulkError::NotFound("job"))?;
         let operation_type = job.operation_type;
 
-        self.jobs.mark_running(&self.pool, job_id).await?;
+        self.jobs.mark_running(&self.rpool(), job_id).await?;
 
-        let items = self.items.fetch_pending(&self.pool, job_id).await?;
+        let items = self.items.fetch_pending(&self.rpool(), job_id).await?;
 
         let (mut succeeded, mut failed) = (0i32, 0i32);
         for it in &items {
@@ -190,7 +197,7 @@ impl BulkWriteService {
             // CAS (0 rows) and skips it, so the target is applied at most once even under two concurrent
             // runs. (The CAS was previously AFTER apply, which protected the COUNT but not the APPLY —
             // maturity council 2026-07-10.)
-            let reserved = self.items.reserve(&self.pool, item_id).await?;
+            let reserved = self.items.reserve(&self.rpool(), item_id).await?;
             if reserved != 1 {
                 continue; // another runner owns this item
             }
@@ -199,27 +206,27 @@ impl BulkWriteService {
             match port.apply(&op).await {
                 Ok(ack) => {
                     self.items
-                        .mark_applied(&self.pool, item_id, &ack.applied_ref_type, ack.applied_ref_id)
+                        .mark_applied(&self.rpool(), item_id, &ack.applied_ref_type, ack.applied_ref_id)
                         .await?;
                     succeeded += 1;
                 }
                 Err(rej) => {
-                    self.items.mark_failed(&self.pool, item_id, &rej.message).await?;
+                    self.items.mark_failed(&self.rpool(), item_id, &rej.message).await?;
                     failed += 1;
                 }
             }
         }
 
         // Roll the job counts up from the item ledger (authoritative — covers prior runs too).
-        let counts = self.items.count_outcomes(&self.pool, job_id).await?;
+        let counts = self.items.count_outcomes(&self.rpool(), job_id).await?;
         let applied_total = counts.applied;
         let failed_total = counts.failed;
         let job_status = terminal_status(failed_total, counts.cancelled);
         self.jobs
-            .set_outcome(&self.pool, job_id, job_status, applied_total as i32, failed_total as i32)
+            .set_outcome(&self.rpool(), job_id, job_status, applied_total as i32, failed_total as i32)
             .await?;
 
-        let total_items = self.jobs.fetch_total_items(&self.pool, job_id).await?;
+        let total_items = self.jobs.fetch_total_items(&self.rpool(), job_id).await?;
         events.publish(&BulkEvent::BulkJobCompleted(BulkJobCompleted {
             job_id, company_id, operation_type,
             total_items, succeeded_count: applied_total as i32, failed_count: failed_total as i32,
@@ -233,7 +240,7 @@ impl BulkWriteService {
     pub async fn failures(&self, job_id: Uuid) -> Result<Vec<FailedItem>, BulkError> {
         // Tenancy posture (ADR-0029) — see `run_job`: the read rides the caller's ambient org
         // scope, so another tenant's job reports no failures.
-        let rows = self.items.fetch_failed(&self.pool, job_id).await?;
+        let rows = self.items.fetch_failed(&self.rpool(), job_id).await?;
         Ok(rows.into_iter().map(|r| FailedItem {
             item_key: r.item_key,
             error_detail: r.error_detail,
@@ -246,7 +253,7 @@ impl BulkWriteService {
     /// (completeness council 2026-07-10). Returns the number requeued.
     pub async fn retry_failed(&self, job_id: Uuid) -> Result<u64, BulkError> {
         // Tenancy posture (ADR-0029) — see `run_job`.
-        let moved = self.items.requeue_failed(&self.pool, job_id).await?;
+        let moved = self.items.requeue_failed(&self.rpool(), job_id).await?;
         Ok(moved)
     }
 
@@ -285,14 +292,14 @@ impl BulkWriteService {
 
         let job = self
             .jobs
-            .fetch_for_run(&self.pool, job_id)
+            .fetch_for_run(&self.rpool(), job_id)
             .await?
             .ok_or(BulkError::NotFound("job"))?;
         let operation_type = job.operation_type;
 
         let stale = self
             .items
-            .fetch_applying_stale(&self.pool, job_id, older_than.num_seconds())
+            .fetch_applying_stale(&self.rpool(), job_id, older_than.num_seconds())
             .await?;
 
         let (mut confirmed, mut reapplied, mut cancelled) = (0i32, 0i32, 0i32);
@@ -301,7 +308,7 @@ impl BulkWriteService {
                 // The target already holds the effect — record its ref; never re-apply.
                 Ok(Some(ack)) => {
                     self.items
-                        .mark_applied(&self.pool, it.id, &ack.applied_ref_type, ack.applied_ref_id)
+                        .mark_applied(&self.rpool(), it.id, &ack.applied_ref_type, ack.applied_ref_id)
                         .await?;
                     confirmed += 1;
                 }
@@ -318,11 +325,11 @@ impl BulkWriteService {
                     match port.apply(&op).await {
                         Ok(ack) => {
                             self.items
-                                .mark_applied(&self.pool, it.id, &ack.applied_ref_type, ack.applied_ref_id)
+                                .mark_applied(&self.rpool(), it.id, &ack.applied_ref_type, ack.applied_ref_id)
                                 .await?;
                         }
                         Err(rej) => {
-                            self.items.mark_failed(&self.pool, it.id, &rej.message).await?;
+                            self.items.mark_failed(&self.rpool(), it.id, &rej.message).await?;
                         }
                     }
                     reapplied += 1;
@@ -330,7 +337,7 @@ impl BulkWriteService {
                 // The target cannot answer — cancel; never guess an effect into or out of existence.
                 Err(rej) => {
                     self.items
-                        .mark_cancelled(&self.pool, it.id, &format!("unverifiable after a crashed run: {}", rej.message))
+                        .mark_cancelled(&self.rpool(), it.id, &format!("unverifiable after a crashed run: {}", rej.message))
                         .await?;
                     cancelled += 1;
                 }
@@ -339,19 +346,19 @@ impl BulkWriteService {
 
         // A pass that emptied the non-terminal set finishes the job: roll up from the ledger and
         // publish completion under the same contract as `run_job`.
-        let unfinished = self.items.count_unfinished(&self.pool, job_id).await?;
+        let unfinished = self.items.count_unfinished(&self.rpool(), job_id).await?;
         if unfinished == 0 {
-            let counts = self.items.count_outcomes(&self.pool, job_id).await?;
+            let counts = self.items.count_outcomes(&self.rpool(), job_id).await?;
             self.jobs
                 .set_outcome(
-                    &self.pool,
+                    &self.rpool(),
                     job_id,
                     terminal_status(counts.failed, counts.cancelled),
                     counts.applied as i32,
                     counts.failed as i32,
                 )
                 .await?;
-            let total_items = self.jobs.fetch_total_items(&self.pool, job_id).await?;
+            let total_items = self.jobs.fetch_total_items(&self.rpool(), job_id).await?;
             events.publish(&BulkEvent::BulkJobCompleted(BulkJobCompleted {
                 job_id, company_id, operation_type,
                 total_items, succeeded_count: counts.applied as i32, failed_count: counts.failed as i32,
