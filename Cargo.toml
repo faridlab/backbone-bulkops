@@ -1,6 +1,6 @@
 [package]
 name = "backbone-bulkops"
-version = "0.6.22"
+version = "0.7.0"
 edition = "2021"
 description = "Audited, idempotent batch operations that drive each module's write path through a port seam"
 license = "MIT OR Apache-2.0"
@@ -19,10 +19,10 @@ path = "src/lib.rs"
 # cargo dedupes the git fetch — the repo is cloned once. To move the baseline,
 # change every tag together so the resolve stays single-rev.
 # -----------------------------------------------------------------------------
-backbone-core = { version = "2.7.35", features = ["postgres"] }
-backbone-orm = { version = "2.7.35" }
-backbone-auth = { version = "2.7.35" }
-backbone-messaging = { version = "2.7.35" }
+backbone-core = { version = "3.0.0", features = ["postgres"] }
+backbone-orm = { version = "3.0.0" }
+backbone-auth = { version = "3.0.0" }
+backbone-messaging = { version = "3.0.0" }
 
 # Core async runtime and serialization
 tokio = { version = "1.0", features = ["full"] }
@@ -93,4 +93,4 @@ jsonwebtoken = "9.3"
 rand = "0.8"
 # TEST-ONLY edge: the seam proves a bulk lead-import drives the REAL backbone-lead write path (create_lead)
 # via an in-test BulkTargetPort. Dev-dependency ONLY — bulk-ops reaches a module through the port.
-backbone-lead = { version = "0.3.20" }
+backbone-lead = { version = "0.4.0" }
