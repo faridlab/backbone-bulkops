@@ -115,7 +115,7 @@ impl BulkTargetPort for RealLeadTarget {
         let name = p.get("lead_name").and_then(|v| v.as_str()).unwrap_or("Imported lead").to_string();
         let phone = p.get("phone").and_then(|v| v.as_str()).map(|s| s.to_string());
         let id = self.leads.create_lead(NewLead {
-            company_id: op.company_id, lead_name: name, organization_name: None,
+            lead_name: name, organization_name: None,
             phone, whatsapp_no: None, email: None, source: "other".into(), campaign_id: None,
             notes: Some(format!("bulk import {}", op.item_key)),
             owner_user_id: None, sales_team_id: None,

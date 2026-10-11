@@ -33,10 +33,12 @@ async fn bseam1_bulk_import_creates_real_leads() {
     let sum = scoped(&pool, company, svc.run_job(j, &target, &sink)).await.unwrap();
     assert_eq!(sum.succeeded, 2);
 
-    // Two REAL leads exist for this company, created through create_lead (status 'new', source 'other').
+    // Two REAL leads exist for this job, created through create_lead (status 'new'). A lead row
+    // carries no tenant column any more, so the job's applied refs are what find them.
     let n: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM lead.leads WHERE company_id=$1 AND status='new'::lead_status")
-        .bind(company).fetch_one(&pool).await.unwrap();
+        "SELECT count(*) FROM lead.leads WHERE status='new'::lead_status AND id IN \
+         (SELECT applied_ref_id FROM bulkops.bulk_job_items WHERE job_id=$1)")
+        .bind(j).fetch_one(&pool).await.unwrap();
     assert_eq!(n, 2, "two real leads imported");
 
     // Each applied item recorded the created lead id (the audit link back).
