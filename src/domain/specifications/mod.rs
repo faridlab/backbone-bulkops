@@ -9,5 +9,3 @@ pub use backbone_core::{Specification, AndSpecification, OrSpecification, NotSpe
 pub mod bulk_job_specification;
 pub mod bulk_job_item_specification;
 
-// <<< CUSTOM
-// END CUSTOM

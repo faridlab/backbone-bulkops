@@ -8,11 +8,7 @@
 pub mod bulk_job_handler;
 pub mod bulk_job_item_handler;
 
-// <<< CUSTOM
-// END CUSTOM
 
 // Re-exports
 pub use bulk_job_handler::{create_bulk_job_routes, create_bulk_job_read_routes, create_bulk_job_write_routes};
 pub use bulk_job_item_handler::{create_bulk_job_item_routes, create_bulk_job_item_read_routes, create_bulk_job_item_write_routes};
-// <<< CUSTOM
-// END CUSTOM

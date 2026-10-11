@@ -294,7 +294,7 @@ impl backbone_core::ApplyUpdateDto<UpdateBulkJobItemDto> for BulkJobItem {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to BulkJobItem here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

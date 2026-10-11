@@ -10,13 +10,9 @@ pub use error::{ServiceError, ServiceResult};
 pub mod bulk_job_service;
 pub mod bulk_job_item_service;
 
-// <<< CUSTOM
-// END CUSTOM
 
 pub use bulk_job_service::BulkJobService;
 pub use bulk_job_item_service::BulkJobItemService;
-// <<< CUSTOM
-// END CUSTOM
 
 // This directory's extension (hand-written; ADR-0031).
 include!("mod.ext.rs");

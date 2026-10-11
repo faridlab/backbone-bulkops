@@ -24,8 +24,6 @@ pub mod application;
 pub mod presentation;
 pub mod seeders;
 pub mod exports;
-// <<< CUSTOM MODULES
-// END CUSTOM
 
 // Re-exports for convenience - Domain entities
 pub use domain::entity::*;
@@ -59,8 +57,6 @@ use sqlx::PgPool;
 pub struct BulkopsModule {
     pub(crate) bulk_job_service: Arc<BulkJobService>,
     pub(crate) bulk_job_item_service: Arc<BulkJobItemService>,
-    // <<< CUSTOM FIELDS
-    // END CUSTOM
 }
 
 impl BulkopsModule {
@@ -111,15 +107,11 @@ impl BulkopsModule {
             .merge(create_bulk_job_item_read_routes(self.bulk_job_item_service.clone()))
     }
 
-    // <<< CUSTOM METHODS
-    // END CUSTOM
 }
 
 /// Builder for BulkopsModule
 pub struct BulkopsModuleBuilder {
     db_pool: Option<PgPool>,
-    // <<< CUSTOM BUILDER FIELDS
-    // END CUSTOM
 }
 
 impl BulkopsModuleBuilder {
@@ -127,8 +119,6 @@ impl BulkopsModuleBuilder {
     pub fn new() -> Self {
         Self {
             db_pool: None,
-            // <<< CUSTOM BUILDER DEFAULTS
-            // END CUSTOM
         }
     }
 
@@ -138,8 +128,6 @@ impl BulkopsModuleBuilder {
         self
     }
 
-    // <<< CUSTOM - custom builder methods
-    // END CUSTOM
 
     /// Build the module with configured dependencies
     pub fn build(self) -> anyhow::Result<BulkopsModule> {
@@ -154,14 +142,10 @@ impl BulkopsModuleBuilder {
         let bulk_job_item_repository = Arc::new(BulkJobItemRepository::new(db_pool.clone()));
         let bulk_job_item_service = Arc::new(BulkJobItemService::with_repository(bulk_job_item_repository.clone()));
 
-        // <<< CUSTOM
-        // END CUSTOM
 
         Ok(BulkopsModule {
             bulk_job_service,
             bulk_job_item_service,
-            // <<< CUSTOM
-            // END CUSTOM
         })
     }
 }

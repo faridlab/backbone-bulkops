@@ -8,8 +8,6 @@ mod bulk_job_repository;
 mod bulk_job_item_repository;
 
 // Custom persistence modules
-// <<< CUSTOM
-// END CUSTOM
 
 // Re-exports
 pub use bulk_job_repository::BulkJobRepository;
@@ -23,8 +21,6 @@ pub use backbone_orm::repository::{
 };
 
 // Re-export custom persistence types
-// <<< CUSTOM
-// END CUSTOM
 
 // This directory's extension (hand-written; ADR-0031).
 include!("mod.ext.rs");

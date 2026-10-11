@@ -109,6 +109,4 @@ mod tests {
 // CUSTOM TESTS
 // ============================================================================
 
-// <<< CUSTOM TESTS START >>>
 // Add BulkJob specific tests here
-// <<< CUSTOM TESTS END >>>

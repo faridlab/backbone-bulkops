@@ -17,9 +17,5 @@ pub fn bulk_job_validator() -> BulkJobValidator {
     EntityValidator::new()
         .rule(RequiredString::new("operation_type", |e: &BulkJob| &e.operation_type))
         .rule(RequiredString::new("target_module", |e: &BulkJob| &e.target_module))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

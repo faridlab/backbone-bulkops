@@ -12,5 +12,3 @@ pub use bulk_job_event_handlers::BulkJobEventHandler;
 pub use bulk_job_item_events::{BulkJobItemEvent, BulkJobItemEventPublisher, NoopBulkJobItemEventPublisher};
 pub use bulk_job_item_event_handlers::BulkJobItemEventHandler;
 
-// <<< CUSTOM
-// END CUSTOM

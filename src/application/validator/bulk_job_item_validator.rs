@@ -19,9 +19,5 @@ pub fn bulk_job_item_validator() -> BulkJobItemValidator {
         .rule(RequiredString::new("payload", |e: &BulkJobItem| &e.payload))
         .rule(OptionalNotBlank::new("applied_ref_type", |e: &BulkJobItem| e.applied_ref_type.as_deref()))
         .rule(OptionalNotBlank::new("error_detail", |e: &BulkJobItem| e.error_detail.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

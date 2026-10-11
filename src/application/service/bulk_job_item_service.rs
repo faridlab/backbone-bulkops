@@ -32,5 +32,3 @@ pub type BulkJobItemService = GenericCrudService<
     BulkJobItemRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

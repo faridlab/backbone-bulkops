@@ -18,5 +18,3 @@ use crate::domain::entity::BulkJobItem;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type BulkJobItemDomainPolicy = PermitAllPolicy<BulkJobItem>;
 
-// <<< CUSTOM
-// END CUSTOM

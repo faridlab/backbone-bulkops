@@ -8,5 +8,3 @@ pub mod bulk_job_item_domain_policy;
 pub use bulk_job_domain_policy::BulkJobDomainPolicy;
 pub use bulk_job_item_domain_policy::BulkJobItemDomainPolicy;
 
-// <<< CUSTOM
-// END CUSTOM

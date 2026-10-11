@@ -11,5 +11,3 @@ pub mod bulk_job_item_validator;
 pub use bulk_job_validator::{BulkJobValidator, bulk_job_validator};
 pub use bulk_job_item_validator::{BulkJobItemValidator, bulk_job_item_validator};
 
-// <<< CUSTOM
-// END CUSTOM
