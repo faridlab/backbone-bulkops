@@ -11,15 +11,12 @@ pub mod bulk_job_service;
 pub mod bulk_job_item_service;
 
 // <<< CUSTOM
-pub mod bulk_ports;
-pub mod bulk_events;
-pub mod bulk_write_service;
 // END CUSTOM
 
 pub use bulk_job_service::BulkJobService;
 pub use bulk_job_item_service::BulkJobItemService;
 // <<< CUSTOM
-pub use bulk_ports::{BulkAck, BulkOp, BulkRejected, BulkTargetPort};
-pub use bulk_events::{BulkEvent, BulkEventSink, BulkJobCompleted, LoggingSink};
-pub use bulk_write_service::{BulkError, BulkWriteService, FailedItem, NewItem, NewJob, RunSummary};
 // END CUSTOM
+
+// This directory's extension (hand-written; ADR-0031).
+include!("mod.ext.rs");
