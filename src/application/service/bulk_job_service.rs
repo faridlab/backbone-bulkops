@@ -56,7 +56,7 @@ impl backbone_core::write_guard::WriteGuard<BulkJob> for BulkJobRowRules {
         };
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
-        let mut shadow = Vec::new();
+        let shadow = Vec::new();
         let mut refuse = Vec::new();
         // `operation_type_required` (@required on BulkJob.operation_type)
         if (create || (update && r::changed(old.as_ref(), row, &["operation_type"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "operation_type")), r::not(r::is_empty(r::trim(r::field(row, "operation_type")))))) {
@@ -64,7 +64,7 @@ impl backbone_core::write_guard::WriteGuard<BulkJob> for BulkJobRowRules {
         }
         // `operation_type_max_length` (@length(max=80) on BulkJob.operation_type)
         if (create || (update && r::changed(old.as_ref(), row, &["operation_type"]))) && !r::holds(&r::le(r::length(r::field(row, "operation_type")), r::Val::Num(80.0_f64))) {
-            shadow.push(Violation::new("operation_type", "max_length", "operation_type must be at most 80 characters").with_param("max", 80_i64));
+            refuse.push(Violation::new("operation_type", "max_length", "operation_type must be at most 80 characters").with_param("max", 80_i64));
         }
         // `target_module_required` (@required on BulkJob.target_module)
         if (create || (update && r::changed(old.as_ref(), row, &["target_module"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "target_module")), r::not(r::is_empty(r::trim(r::field(row, "target_module")))))) {
@@ -72,7 +72,7 @@ impl backbone_core::write_guard::WriteGuard<BulkJob> for BulkJobRowRules {
         }
         // `target_module_max_length` (@length(max=60) on BulkJob.target_module)
         if (create || (update && r::changed(old.as_ref(), row, &["target_module"]))) && !r::holds(&r::le(r::length(r::field(row, "target_module")), r::Val::Num(60.0_f64))) {
-            shadow.push(Violation::new("target_module", "max_length", "target_module must be at most 60 characters").with_param("max", 60_i64));
+            refuse.push(Violation::new("target_module", "max_length", "target_module must be at most 60 characters").with_param("max", 60_i64));
         }
         GuardOutcome { refuse, shadow }
     }
