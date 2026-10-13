@@ -19,7 +19,7 @@ path = "src/lib.rs"
 # cargo dedupes the git fetch — the repo is cloned once. To move the baseline,
 # change every tag together so the resolve stays single-rev.
 # -----------------------------------------------------------------------------
-backbone-core = { version = "3.0.0", features = ["postgres"] }
+backbone-core = { version = "3.7.0", features = ["postgres"] }
 backbone-orm = { version = "3.0.0" }
 backbone-auth = { version = "3.0.0" }
 backbone-messaging = { version = "3.0.0" }

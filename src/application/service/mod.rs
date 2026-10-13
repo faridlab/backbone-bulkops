@@ -13,6 +13,8 @@ pub mod bulk_job_item_service;
 
 pub use bulk_job_service::BulkJobService;
 pub use bulk_job_item_service::BulkJobItemService;
+pub use bulk_job_service::BulkJobRowRules;
+pub use bulk_job_item_service::BulkJobItemRowRules;
 
 // This directory's extension (hand-written; ADR-0031).
 include!("mod.ext.rs");

@@ -32,3 +32,49 @@ pub type BulkJobService = GenericCrudService<
     BulkJobRepository,
 >;
 
+/// The rules the schema declares for BulkJob, checked against the row a create or update
+/// would store. The generated build attaches it to [`BulkJobService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
+pub struct BulkJobRowRules;
+
+#[async_trait::async_trait]
+impl backbone_core::write_guard::WriteGuard<BulkJob> for BulkJobRowRules {
+    async fn check(
+        &self,
+        ctx: &backbone_core::write_guard::WriteCtx<'_, BulkJob>,
+    ) -> backbone_core::write_guard::GuardOutcome {
+        use backbone_core::row_rule as r;
+        use backbone_core::violation::Violation;
+        use backbone_core::write_guard::{GuardOutcome, WriteKind};
+        let (create, update) = (ctx.kind == WriteKind::Create, ctx.kind == WriteKind::Update);
+        let Some(after) = ctx.after.filter(|_| create || update) else {
+            return GuardOutcome::allow();
+        };
+        let Ok(row) = serde_json::to_value(after) else {
+            return GuardOutcome::allow();
+        };
+        let row = &row;
+        let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
+        let mut shadow = Vec::new();
+        let mut refuse = Vec::new();
+        // `operation_type_required` (@required on BulkJob.operation_type)
+        if (create || (update && r::changed(old.as_ref(), row, &["operation_type"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "operation_type")), r::not(r::is_empty(r::trim(r::field(row, "operation_type")))))) {
+            refuse.push(Violation::new("operation_type", "required", "operation_type is required"));
+        }
+        // `operation_type_max_length` (@length(max=80) on BulkJob.operation_type)
+        if (create || (update && r::changed(old.as_ref(), row, &["operation_type"]))) && !r::holds(&r::le(r::length(r::field(row, "operation_type")), r::Val::Num(80.0_f64))) {
+            shadow.push(Violation::new("operation_type", "max_length", "operation_type must be at most 80 characters").with_param("max", 80_i64));
+        }
+        // `target_module_required` (@required on BulkJob.target_module)
+        if (create || (update && r::changed(old.as_ref(), row, &["target_module"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "target_module")), r::not(r::is_empty(r::trim(r::field(row, "target_module")))))) {
+            refuse.push(Violation::new("target_module", "required", "target_module is required"));
+        }
+        // `target_module_max_length` (@length(max=60) on BulkJob.target_module)
+        if (create || (update && r::changed(old.as_ref(), row, &["target_module"]))) && !r::holds(&r::le(r::length(r::field(row, "target_module")), r::Val::Num(60.0_f64))) {
+            shadow.push(Violation::new("target_module", "max_length", "target_module must be at most 60 characters").with_param("max", 60_i64));
+        }
+        GuardOutcome { refuse, shadow }
+    }
+}
+

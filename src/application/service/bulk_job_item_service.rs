@@ -32,3 +32,61 @@ pub type BulkJobItemService = GenericCrudService<
     BulkJobItemRepository,
 >;
 
+/// The rules the schema declares for BulkJobItem, checked against the row a create or update
+/// would store. The generated build attaches it to [`BulkJobItemService`]. A refusing rule's
+/// break answers 422; a rule in shadow is logged under `backbone::write_guard` and the
+/// write goes ahead.
+pub struct BulkJobItemRowRules;
+
+#[async_trait::async_trait]
+impl backbone_core::write_guard::WriteGuard<BulkJobItem> for BulkJobItemRowRules {
+    async fn check(
+        &self,
+        ctx: &backbone_core::write_guard::WriteCtx<'_, BulkJobItem>,
+    ) -> backbone_core::write_guard::GuardOutcome {
+        use backbone_core::row_rule as r;
+        use backbone_core::violation::Violation;
+        use backbone_core::write_guard::{GuardOutcome, WriteKind};
+        let (create, update) = (ctx.kind == WriteKind::Create, ctx.kind == WriteKind::Update);
+        let Some(after) = ctx.after.filter(|_| create || update) else {
+            return GuardOutcome::allow();
+        };
+        let Ok(row) = serde_json::to_value(after) else {
+            return GuardOutcome::allow();
+        };
+        let row = &row;
+        let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
+        let mut shadow = Vec::new();
+        let mut refuse = Vec::new();
+        // `job_id_required` (@required on BulkJobItem.job_id)
+        if (create || (update && r::changed(old.as_ref(), row, &["job_id"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "job_id")), r::not(r::is_empty(r::trim(r::field(row, "job_id")))))) {
+            refuse.push(Violation::new("job_id", "required", "job_id is required"));
+        }
+        // `item_key_required` (@required on BulkJobItem.item_key)
+        if (create || (update && r::changed(old.as_ref(), row, &["item_key"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "item_key")), r::not(r::is_empty(r::trim(r::field(row, "item_key")))))) {
+            refuse.push(Violation::new("item_key", "required", "item_key is required"));
+        }
+        // `item_key_max_length` (@length(max=200) on BulkJobItem.item_key)
+        if (create || (update && r::changed(old.as_ref(), row, &["item_key"]))) && !r::holds(&r::le(r::length(r::field(row, "item_key")), r::Val::Num(200.0_f64))) {
+            shadow.push(Violation::new("item_key", "max_length", "item_key must be at most 200 characters").with_param("max", 200_i64));
+        }
+        // `payload_required` (@required on BulkJobItem.payload)
+        if (create || (update && r::changed(old.as_ref(), row, &["payload"]))) && !r::holds(&r::and(r::is_not_null(r::field(row, "payload")), r::not(r::is_empty(r::trim(r::field(row, "payload")))))) {
+            refuse.push(Violation::new("payload", "required", "payload is required"));
+        }
+        // `payload_max_length` (@length(max=8000) on BulkJobItem.payload)
+        if (create || (update && r::changed(old.as_ref(), row, &["payload"]))) && !r::holds(&r::le(r::length(r::field(row, "payload")), r::Val::Num(8000.0_f64))) {
+            shadow.push(Violation::new("payload", "max_length", "payload must be at most 8000 characters").with_param("max", 8000_i64));
+        }
+        // `applied_ref_type_max_length` (@length(max=60) on BulkJobItem.applied_ref_type)
+        if (create || (update && r::changed(old.as_ref(), row, &["applied_ref_type"]))) && !r::holds(&r::le(r::length(r::field(row, "applied_ref_type")), r::Val::Num(60.0_f64))) {
+            shadow.push(Violation::new("applied_ref_type", "max_length", "applied_ref_type must be at most 60 characters").with_param("max", 60_i64));
+        }
+        // `error_detail_max_length` (@length(max=1000) on BulkJobItem.error_detail)
+        if (create || (update && r::changed(old.as_ref(), row, &["error_detail"]))) && !r::holds(&r::le(r::length(r::field(row, "error_detail")), r::Val::Num(1000.0_f64))) {
+            shadow.push(Violation::new("error_detail", "max_length", "error_detail must be at most 1000 characters").with_param("max", 1000_i64));
+        }
+        GuardOutcome { refuse, shadow }
+    }
+}
+
