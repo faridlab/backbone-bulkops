@@ -250,6 +250,9 @@ impl backbone_orm::EntityRepoMeta for BulkJobItem {
     fn search_fields() -> &'static [&'static str] {
         &["item_key", "payload"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("job", "bulk_jobs", "jobId")]
+    }
 }
 
 /// Builder for BulkJobItem entity
