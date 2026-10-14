@@ -16,5 +16,21 @@ pub use bulk_job_item_service::BulkJobItemService;
 pub use bulk_job_service::BulkJobRowRules;
 pub use bulk_job_item_service::BulkJobItemRowRules;
 
+/// A `BulkJobService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_bulk_job_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::BulkJobRepository>,
+) -> BulkJobService {
+    BulkJobService::with_repository(repository).with_guard(std::sync::Arc::new(BulkJobRowRules))
+}
+
+/// A `BulkJobItemService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_bulk_job_item_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::BulkJobItemRepository>,
+) -> BulkJobItemService {
+    BulkJobItemService::with_repository(repository).with_guard(std::sync::Arc::new(BulkJobItemRowRules))
+}
+
 // This directory's extension (hand-written; ADR-0031).
 include!("mod.ext.rs");

@@ -133,11 +133,11 @@ impl BulkopsModuleBuilder {
 
         // BulkJob service
         let bulk_job_repository = Arc::new(BulkJobRepository::new(db_pool.clone()));
-        let bulk_job_service = Arc::new(BulkJobService::with_repository(bulk_job_repository.clone()).with_guard(Arc::new(crate::application::service::BulkJobRowRules)));
+        let bulk_job_service = Arc::new(crate::application::service::build_bulk_job_service(bulk_job_repository.clone()));
 
         // BulkJobItem service
         let bulk_job_item_repository = Arc::new(BulkJobItemRepository::new(db_pool.clone()));
-        let bulk_job_item_service = Arc::new(BulkJobItemService::with_repository(bulk_job_item_repository.clone()).with_guard(Arc::new(crate::application::service::BulkJobItemRowRules)));
+        let bulk_job_item_service = Arc::new(crate::application::service::build_bulk_job_item_service(bulk_job_item_repository.clone()));
 
 
         Ok(BulkopsModule {
