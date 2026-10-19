@@ -806,11 +806,6 @@ components:
       required:
         - operation_type
         - target_module
-        - status
-        - total_items
-        - succeeded_count
-        - failed_count
-        - metadata
       properties:
         operation_type:
           type: string
@@ -831,8 +826,6 @@ components:
           nullable: true
           type: string
           format: uuid
-        metadata:
-          type: object
 
     UpdateBulkJobRequest:
       type: object
@@ -843,7 +836,6 @@ components:
         - total_items
         - succeeded_count
         - failed_count
-        - metadata
       properties:
         operation_type:
           type: string
@@ -864,8 +856,6 @@ components:
           nullable: true
           type: string
           format: uuid
-        metadata:
-          type: object
 
     PatchBulkJobRequest:
       type: object
@@ -889,8 +879,6 @@ components:
           nullable: true
           type: string
           format: uuid
-        metadata:
-          type: object
 
     BulkJobList:
       type: object
@@ -955,9 +943,7 @@ components:
       required:
         - job_id
         - item_key
-        - status
         - payload
-        - metadata
       properties:
         job_id:
           type: string
@@ -978,8 +964,6 @@ components:
         error_detail:
           nullable: true
           type: string
-        metadata:
-          type: object
 
     UpdateBulkJobItemRequest:
       type: object
@@ -988,7 +972,6 @@ components:
         - item_key
         - status
         - payload
-        - metadata
       properties:
         job_id:
           type: string
@@ -1009,8 +992,6 @@ components:
         error_detail:
           nullable: true
           type: string
-        metadata:
-          type: object
 
     PatchBulkJobItemRequest:
       type: object
@@ -1034,8 +1015,6 @@ components:
         error_detail:
           nullable: true
           type: string
-        metadata:
-          type: object
 
     BulkJobItemList:
       type: object

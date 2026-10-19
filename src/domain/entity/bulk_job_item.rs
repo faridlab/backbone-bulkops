@@ -210,6 +210,12 @@ impl super::Entity for BulkJobItem {
 }
 
 impl backbone_core::PersistentEntity for BulkJobItem {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("job_id", "bulkops.bulk_jobs", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

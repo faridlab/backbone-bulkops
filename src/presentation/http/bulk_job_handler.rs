@@ -80,6 +80,13 @@ impl axum::response::IntoResponse for BulkJobError {
 // Route Configuration
 // =============================================================================
 
+/// The permissions this entity's generic routes require: `bulk_job:<action>` for `read`, `create`,
+/// `update`, `delete`, `restore` and `purge`, with any rename the schema's `requires:` declares.
+pub fn bulk_job_permissions() -> backbone_core::http::CrudPermissions {
+    backbone_core::http::CrudPermissions::new("bulk_job")
+        .in_module("bulkops")
+}
+
 /// Create Axum router with all 16 Backbone endpoints for BulkJob.
 ///
 /// # Routes
@@ -109,21 +116,23 @@ impl axum::response::IntoResponse for BulkJobError {
 /// let router = create_bulk_job_routes(service);
 /// ```
 pub fn create_bulk_job_routes(service: Arc<BulkJobService>) -> Router {
-    BackboneCrudHandler::<BulkJobService, BulkJob, CreateBulkJobDto, UpdateBulkJobDto, BulkJobResponseDto>::routes(
+    BackboneCrudHandler::<BulkJobService, BulkJob, CreateBulkJobDto, UpdateBulkJobDto, BulkJobResponseDto>::routes_guarded(
         service,
         "/bulk_jobs",
+        bulk_job_permissions(),
     )
 }
 
 /// Create Axum router with only the read (GET) endpoints for BulkJob.
 ///
-/// Safe for public, unauthenticated exposure (e.g., reference data).
+/// Each route requires the entity's `read` permission, so it needs an authenticated caller.
 /// Mutations must be served separately via `create_bulk_job_write_routes`,
 /// typically wrapped in an auth middleware layer.
 pub fn create_bulk_job_read_routes(service: Arc<BulkJobService>) -> Router {
-    BackboneCrudHandler::<BulkJobService, BulkJob, CreateBulkJobDto, UpdateBulkJobDto, BulkJobResponseDto>::read_routes(
+    BackboneCrudHandler::<BulkJobService, BulkJob, CreateBulkJobDto, UpdateBulkJobDto, BulkJobResponseDto>::read_routes_guarded(
         service,
         "/bulk_jobs",
+        bulk_job_permissions(),
     )
 }
 
@@ -139,9 +148,10 @@ pub fn create_bulk_job_read_routes(service: Arc<BulkJobService>) -> Router {
 /// service (e.g. a command router over its domain engine), serve THAT instead
 /// for any mutation that must respect domain rules.
 pub fn create_bulk_job_write_routes(service: Arc<BulkJobService>) -> Router {
-    BackboneCrudHandler::<BulkJobService, BulkJob, CreateBulkJobDto, UpdateBulkJobDto, BulkJobResponseDto>::write_routes(
+    BackboneCrudHandler::<BulkJobService, BulkJob, CreateBulkJobDto, UpdateBulkJobDto, BulkJobResponseDto>::write_routes_guarded(
         service,
         "/bulk_jobs",
+        bulk_job_permissions(),
     )
 }
 

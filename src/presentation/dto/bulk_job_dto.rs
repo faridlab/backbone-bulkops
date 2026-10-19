@@ -35,18 +35,23 @@ pub struct CreateBulkJobDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "target_module")]
     pub target_module: String,
+    #[serde(default = "default_create_bulk_job_status")]
     pub status: BulkJobStatus,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
-    #[serde(alias = "total_items")]
+    #[serde(default, alias = "total_items")]
     pub total_items: i32,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
-    #[serde(alias = "succeeded_count")]
+    #[serde(default, alias = "succeeded_count")]
     pub succeeded_count: i32,
     #[cfg_attr(feature = "openapi", schema(example = 42))]
-    #[serde(alias = "failed_count")]
+    #[serde(default, alias = "failed_count")]
     pub failed_count: i32,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "submitted_by")]
     pub submitted_by: Option<Uuid>,
+}
+
+fn default_create_bulk_job_status() -> BulkJobStatus {
+    BulkJobStatus::Pending
 }
 
 // =============================================================================
@@ -110,8 +115,8 @@ pub struct PatchBulkJobDto {
     #[cfg_attr(feature = "openapi", schema(example = 42))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "failed_count")]
     pub failed_count: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "submitted_by")]
-    pub submitted_by: Option<Uuid>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "submitted_by")]
+    pub submitted_by: Option<Option<Uuid>>,
 }
 
 impl PatchBulkJobDto {
@@ -293,12 +298,4 @@ impl backbone_core::ApplyUpdateDto<UpdateBulkJobDto> for BulkJob {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to BulkJob here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

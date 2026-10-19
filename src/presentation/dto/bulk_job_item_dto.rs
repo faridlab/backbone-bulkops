@@ -35,6 +35,7 @@ pub struct CreateBulkJobItemDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(alias = "item_key")]
     pub item_key: String,
+    #[serde(default = "default_create_bulk_job_item_status")]
     pub status: BulkItemStatus,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub payload: String,
@@ -44,6 +45,10 @@ pub struct CreateBulkJobItemDto {
     pub applied_ref_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "error_detail")]
     pub error_detail: Option<String>,
+}
+
+fn default_create_bulk_job_item_status() -> BulkItemStatus {
+    BulkItemStatus::Pending
 }
 
 // =============================================================================
@@ -98,12 +103,12 @@ pub struct PatchBulkJobItemDto {
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "applied_ref_type")]
-    pub applied_ref_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "applied_ref_id")]
-    pub applied_ref_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "error_detail")]
-    pub error_detail: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "applied_ref_type")]
+    pub applied_ref_type: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "applied_ref_id")]
+    pub applied_ref_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "error_detail")]
+    pub error_detail: Option<Option<String>>,
 }
 
 impl PatchBulkJobItemDto {
@@ -283,12 +288,4 @@ impl backbone_core::ApplyUpdateDto<UpdateBulkJobItemDto> for BulkJobItem {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to BulkJobItem here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 
